@@ -1,7 +1,7 @@
 """Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
 
-import json
 import html
+import json
 import os
 import platform
 import re
@@ -13,15 +13,15 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from click_default_group import DefaultGroup
 import httpx
-from jinja2 import Environment, PackageLoader
 import markdown
 import questionary
+from click_default_group import DefaultGroup
+from jinja2 import Environment, PackageLoader
 
 # Set up Jinja2 environment
 _jinja_env = Environment(
-    loader=PackageLoader("claude_code_transcripts", "templates"),
+    loader=PackageLoader("agent_log_gif", "templates"),
     autoescape=True,
 )
 
@@ -1471,7 +1471,7 @@ def generate_html(json_path, output_dir, github_repo=None):
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
-@click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
+@click.version_option(None, "-v", "--version", package_name="agent-log-gif")
 def cli():
     """Convert Claude Code session JSON to mobile-friendly HTML pages."""
     pass

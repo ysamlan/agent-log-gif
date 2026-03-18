@@ -1,0 +1,6 @@
+[tools]
+bun = "latest"
+node = "24"
+
+[settings]
+python.uv_venv_auto = "source"

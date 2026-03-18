@@ -7,26 +7,26 @@ from pathlib import Path
 import pytest
 from syrupy.extensions.single_file import SingleFileSnapshotExtension, WriteMode
 
-from claude_code_transcripts import (
-    generate_html,
+from agent_log_gif import (
+    GIST_PREVIEW_JS,
+    analyze_conversation,
+    create_gist,
     detect_github_repo,
-    render_markdown_text,
+    find_local_sessions,
     format_json,
+    format_tool_stats,
+    generate_html,
+    get_session_summary,
+    inject_gist_preview_js,
     is_json_like,
-    render_todo_write,
-    render_write_tool,
-    render_edit_tool,
+    is_tool_result_message,
+    parse_session_file,
     render_bash_tool,
     render_content_block,
-    analyze_conversation,
-    format_tool_stats,
-    is_tool_result_message,
-    inject_gist_preview_js,
-    create_gist,
-    GIST_PREVIEW_JS,
-    parse_session_file,
-    get_session_summary,
-    find_local_sessions,
+    render_edit_tool,
+    render_markdown_text,
+    render_todo_write,
+    render_write_tool,
 )
 
 
@@ -213,7 +213,6 @@ class TestRenderContentBlock:
         # 200x200 black GIF - minimal valid GIF with black pixels
         # Generated with: from PIL import Image; img = Image.new('RGB', (200, 200), (0, 0, 0)); img.save('black.gif')
         import base64
-        import io
 
         # Create a minimal 200x200 black GIF using raw bytes
         # GIF89a header + logical screen descriptor + global color table + image data
@@ -287,10 +286,10 @@ class TestRenderContentBlock:
     def test_tool_result_with_commit(self, snapshot_html):
         """Test tool result with git commit output."""
         # Need to set the global _github_repo for commit link rendering
-        import claude_code_transcripts
+        import agent_log_gif
 
-        old_repo = claude_code_transcripts._github_repo
-        claude_code_transcripts._github_repo = "example/repo"
+        old_repo = agent_log_gif._github_repo
+        agent_log_gif._github_repo = "example/repo"
         try:
             block = {
                 "type": "tool_result",
@@ -300,7 +299,7 @@ class TestRenderContentBlock:
             result = render_content_block(block)
             assert result == snapshot_html
         finally:
-            claude_code_transcripts._github_repo = old_repo
+            agent_log_gif._github_repo = old_repo
 
     def test_tool_result_with_image(self, snapshot_html):
         """Test tool result containing image blocks in content array.
@@ -574,7 +573,6 @@ class TestCreateGist:
     def test_creates_gist_successfully(self, output_dir, monkeypatch):
         """Test successful gist creation."""
         import subprocess
-        import click
 
         # Create test HTML files
         (output_dir / "index.html").write_text(
@@ -614,6 +612,7 @@ class TestCreateGist:
     def test_raises_on_gh_cli_error(self, output_dir, monkeypatch):
         """Test that error is raised when gh CLI fails."""
         import subprocess
+
         import click
 
         # Create test HTML file
@@ -639,6 +638,7 @@ class TestCreateGist:
     def test_raises_on_gh_not_found(self, output_dir, monkeypatch):
         """Test that error is raised when gh CLI is not installed."""
         import subprocess
+
         import click
 
         # Create test HTML file
@@ -663,9 +663,11 @@ class TestSessionGistOption:
 
     def test_session_gist_creates_gist(self, monkeypatch, tmp_path):
         """Test that session --gist creates a gist."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import subprocess
+
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Create sample session file
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -684,9 +686,7 @@ class TestSessionGistOption:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock tempfile.gettempdir to use our tmp_path
-        monkeypatch.setattr(
-            "claude_code_transcripts.tempfile.gettempdir", lambda: str(tmp_path)
-        )
+        monkeypatch.setattr("agent_log_gif.tempfile.gettempdir", lambda: str(tmp_path))
 
         runner = CliRunner()
         result = runner.invoke(
@@ -701,9 +701,11 @@ class TestSessionGistOption:
 
     def test_session_gist_with_output_dir(self, monkeypatch, output_dir):
         """Test that session --gist with -o uses specified directory."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import subprocess
+
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -828,9 +830,9 @@ class TestContinuationLongTexts:
         # The long text summary should appear in the index
         # This is the bug: currently it doesn't because the continuation
         # conversation is skipped entirely
-        assert (
-            "All tasks completed successfully" in index_html
-        ), "Long text from continuation conversation should appear in index"
+        assert "All tasks completed successfully" in index_html, (
+            "Long text from continuation conversation should appear in index"
+        )
         assert "Redis JavaScript Module" in index_html
 
 
@@ -840,7 +842,8 @@ class TestSessionJsonOption:
     def test_session_json_copies_file(self, output_dir):
         """Test that session --json copies the JSON file to output."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -859,7 +862,8 @@ class TestSessionJsonOption:
     def test_session_json_preserves_original_name(self, output_dir):
         """Test that --json preserves the original filename."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -881,7 +885,8 @@ class TestImportJsonOption:
     def test_import_json_saves_session_data(self, httpx_mock, output_dir):
         """Test that import --json saves the session JSON."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         # Load sample session to mock API response
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -926,9 +931,11 @@ class TestImportGistOption:
 
     def test_import_gist_creates_gist(self, httpx_mock, monkeypatch, tmp_path):
         """Test that import --gist creates a gist."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import subprocess
+
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Load sample session to mock API response
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -954,9 +961,7 @@ class TestImportGistOption:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock tempfile.gettempdir
-        monkeypatch.setattr(
-            "claude_code_transcripts.tempfile.gettempdir", lambda: str(tmp_path)
-        )
+        monkeypatch.setattr("agent_log_gif.tempfile.gettempdir", lambda: str(tmp_path))
 
         runner = CliRunner()
         result = runner.invoke(
@@ -984,26 +989,30 @@ class TestVersionOption:
     def test_version_long_flag(self):
         """Test that --version shows version info."""
         import importlib.metadata
+
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
 
-        expected_version = importlib.metadata.version("claude-code-transcripts")
+        expected_version = importlib.metadata.version("agent-log-gif")
         assert result.exit_code == 0
         assert expected_version in result.output
 
     def test_version_short_flag(self):
         """Test that -v shows version info."""
         import importlib.metadata
+
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         runner = CliRunner()
         result = runner.invoke(cli, ["-v"])
 
-        expected_version = importlib.metadata.version("claude-code-transcripts")
+        expected_version = importlib.metadata.version("agent-log-gif")
         assert result.exit_code == 0
         assert expected_version in result.output
 
@@ -1014,7 +1023,8 @@ class TestOpenOption:
     def test_session_open_calls_webbrowser(self, output_dir, monkeypatch):
         """Test that session --open opens the browser."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -1025,7 +1035,7 @@ class TestOpenOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        monkeypatch.setattr("agent_log_gif.webbrowser.open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1041,7 +1051,8 @@ class TestOpenOption:
     def test_import_open_calls_webbrowser(self, httpx_mock, output_dir, monkeypatch):
         """Test that import --open opens the browser."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         # Load sample session to mock API response
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -1060,7 +1071,7 @@ class TestOpenOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        monkeypatch.setattr("agent_log_gif.webbrowser.open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1285,9 +1296,10 @@ class TestLocalSessionCLI:
 
     def test_local_shows_sessions_and_converts(self, tmp_path, monkeypatch):
         """Test that 'local' command shows sessions and converts selected one."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import questionary
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1321,9 +1333,10 @@ class TestLocalSessionCLI:
 
     def test_no_args_runs_local_command(self, tmp_path, monkeypatch):
         """Test that running with no arguments runs local command."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import questionary
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1356,9 +1369,10 @@ class TestLocalSessionCLI:
 
     def test_local_handles_cancelled_selection(self, tmp_path, monkeypatch):
         """Test that local command handles cancelled selection gracefully."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import questionary
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1396,7 +1410,8 @@ class TestOutputAutoOption:
     def test_json_output_auto_creates_subdirectory(self, tmp_path):
         """Test that json -a creates output subdirectory named after file stem."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -1414,9 +1429,10 @@ class TestOutputAutoOption:
 
     def test_json_output_auto_uses_cwd_when_no_output(self, tmp_path, monkeypatch):
         """Test that json -a uses current directory when -o not specified."""
+
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
-        import os
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -1438,7 +1454,8 @@ class TestOutputAutoOption:
     def test_json_output_auto_no_browser_open(self, tmp_path, monkeypatch):
         """Test that json -a does not auto-open browser."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
@@ -1449,7 +1466,7 @@ class TestOutputAutoOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        monkeypatch.setattr("agent_log_gif.webbrowser.open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1462,9 +1479,10 @@ class TestOutputAutoOption:
 
     def test_local_output_auto_creates_subdirectory(self, tmp_path, monkeypatch):
         """Test that local -a creates output subdirectory named after file stem."""
-        from click.testing import CliRunner
-        from claude_code_transcripts import cli
         import questionary
+        from click.testing import CliRunner
+
+        from agent_log_gif import cli
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1504,7 +1522,8 @@ class TestOutputAutoOption:
     def test_web_output_auto_creates_subdirectory(self, httpx_mock, tmp_path):
         """Test that web -a creates output subdirectory named after session ID."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         # Load sample session to mock API response
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -1541,7 +1560,8 @@ class TestOutputAutoOption:
     def test_output_auto_with_jsonl_uses_stem(self, tmp_path, monkeypatch):
         """Test that -a with JSONL file uses file stem (without .jsonl extension)."""
         from click.testing import CliRunner
-        from claude_code_transcripts import cli
+
+        from agent_log_gif import cli
 
         # Create a JSONL file
         fixture_path = Path(__file__).parent / "sample_session.jsonl"

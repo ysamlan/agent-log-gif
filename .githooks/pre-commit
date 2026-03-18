@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pre-commit hook that runs linting/formatting on staged files
+# Uses uv, which auto-detects the correct venv via UV_PROJECT_ENVIRONMENT
+
+set -e
+
+# Pin uv to the correct venv for this worktree/repo
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+if [ "$DEVCONTAINER" = "true" ]; then
+    export UV_PROJECT_ENVIRONMENT="$REPO_ROOT/.venv_devcontainer"
+else
+    export UV_PROJECT_ENVIRONMENT="$REPO_ROOT/.venv"
+fi
+
+# Get staged Python files
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+
+if [ -z "$STAGED_PY" ]; then
+    exit 0
+fi
+
+echo "Running ruff check..."
+uv run ruff check --fix $STAGED_PY
+
+echo "Running ruff format..."
+uv run ruff format $STAGED_PY
+
+# Re-add files that were modified by ruff
+echo $STAGED_PY | xargs git add
+
+echo "Pre-commit checks passed."

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$CLAUDE_FILE_PATH\" == *.py ]]; then uv run ruff format \"$CLAUDE_FILE_PATH\" && uv run ruff check --fix \"$CLAUDE_FILE_PATH\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

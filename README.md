@@ -1,34 +1,32 @@
-# claude-code-transcripts
+# agent-log-gif
 
-[![PyPI](https://img.shields.io/pypi/v/claude-code-transcripts.svg)](https://pypi.org/project/claude-code-transcripts/)
-[![Changelog](https://img.shields.io/github/v/release/simonw/claude-code-transcripts?include_prereleases&label=changelog)](https://github.com/simonw/claude-code-transcripts/releases)
-[![Tests](https://github.com/simonw/claude-code-transcripts/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-transcripts/actions?query=workflow%3ATest)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-transcripts/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/agent-log-gif.svg)](https://pypi.org/project/agent-log-gif/)
+[![Changelog](https://img.shields.io/github/v/release/ysamlan/agent-log-gif?include_prereleases&label=changelog)](https://github.com/ysamlan/agent-log-gif/releases)
+[![Tests](https://github.com/ysamlan/agent-log-gif/workflows/Test/badge.svg)](https://github.com/ysamlan/agent-log-gif/actions?query=workflow%3ATest)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ysamlan/agent-log-gif/blob/main/LICENSE)
 
-Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
+Convert Claude Code session files (JSON or JSONL) to animated GIFs or videos.
 
-[Example transcript](https://static.simonwillison.net/static/2025/claude-code-microjs/index.html) produced using this tool.
-
-Read [A new way to extract detailed transcripts from Claude Code](https://simonwillison.net/2025/Dec/25/claude-code-transcripts/) for background on this project.
+Forked from [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts); all Claude Code transcript parsing logic is based on that work.
 
 > [!WARNING]
 >
-> The `web` commands for both listing Claude Code for web sessions and converting those to a transcript are both broken right now due to changes to the unofficial and undocumented APIs that these commands were using. See [issue #77](https://github.com/simonw/claude-code-transcripts/issues/77) for details.
+> The `web` commands for both listing Claude Code for web sessions and converting those to a transcript are both broken right now due to changes to the unofficial and undocumented APIs that these commands were using. See upstream [issue #77](https://github.com/simonw/agent-log-gif/issues/77) for details.
 
 ## Installation
 
 Install this tool using `uv`:
 ```bash
-uv tool install claude-code-transcripts
+uv tool install agent-log-gif
 ```
 Or run it without installing:
 ```bash
-uvx claude-code-transcripts --help
+uvx agent-log-gif --help
 ```
 
 ## Usage
 
-This tool converts Claude Code session files into browseable multi-page HTML transcripts.
+This tool converts Claude Code session files into animated gifs or videos.
 
 There are four commands available:
 
@@ -40,10 +38,10 @@ There are four commands available:
 The quickest way to view a recent local session:
 
 ```bash
-claude-code-transcripts
+agent-log-gif
 ```
 
-This shows an interactive picker to select a session, generates HTML, and opens it in your default browser.
+This shows an interactive picker to select a session, generates a GIF, and opens it in your default browser.
 
 ### Output options
 
@@ -57,23 +55,22 @@ All commands support these options:
 - `--json` - include the original session file in the output directory
 
 The generated output includes:
-- `index.html` - an index page with a timeline of prompts and commits
-- `page-001.html`, `page-002.html`, etc. - paginated transcript pages
+- `session.gif` - animated version of the session
 
 ### Local sessions
 
 Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:
 
 ```bash
-claude-code-transcripts
+agent-log-gif
 # or explicitly:
-claude-code-transcripts local
+agent-log-gif local
 ```
 
 Use `--limit` to control how many sessions are shown (default: 10):
 
 ```bash
-claude-code-transcripts local --limit 20
+agent-log-gif local --limit 20
 ```
 
 ### Web sessions
@@ -82,13 +79,10 @@ Import sessions directly from the Claude API:
 
 ```bash
 # Interactive session picker
-claude-code-transcripts web
+agent-log-gif web
 
 # Import a specific session by ID
-claude-code-transcripts web SESSION_ID
-
-# Import and publish to gist
-claude-code-transcripts web SESSION_ID --gist
+agent-log-gif web SESSION_ID
 ```
 
 The session picker displays sessions grouped by their associated GitHub repository:
@@ -102,37 +96,10 @@ simonw/llm                    2025-01-14T09:00:00  Add streaming support
 Use `--repo` to filter the session list to a specific repository:
 
 ```bash
-claude-code-transcripts web --repo simonw/datasette
+agent-log-gif web --repo simonw/datasette
 ```
 
 On macOS, API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
-
-### Publishing to GitHub Gist
-
-Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
-
-```bash
-claude-code-transcripts --gist
-claude-code-transcripts web --gist
-claude-code-transcripts json session.json --gist
-```
-
-This will output something like:
-```
-Gist: https://gist.github.com/username/abc123def456
-Preview: https://gisthost.github.io/?abc123def456/index.html
-Files: /var/folders/.../session-id
-```
-
-The preview URL uses [gisthost.github.io](https://gisthost.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gisthost.
-
-Combine with `-o` to keep a local copy:
-
-```bash
-claude-code-transcripts json session.json -o ./my-transcript --gist
-```
-
-**Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
 
 ### Auto-naming output directories
 
@@ -140,10 +107,10 @@ Use `-a/--output-auto` to automatically create a subdirectory named after the se
 
 ```bash
 # Creates ./session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -a
+agent-log-gif web SESSION_ABC123 -a
 
 # Creates ./transcripts/session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
+agent-log-gif web SESSION_ABC123 -o ./transcripts -a
 ```
 
 ### Including the source file
@@ -151,7 +118,7 @@ claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
 Use the `--json` option to include the original session file in the output directory:
 
 ```bash
-claude-code-transcripts json session.json -o ./my-transcript --json
+agent-log-gif json session.json -o ./my-transcript --json
 ```
 
 This will output:
@@ -159,15 +126,15 @@ This will output:
 JSON: ./my-transcript/session_ABC.json (245.3 KB)
 ```
 
-This is useful for archiving the source data alongside the HTML output.
+This is useful for archiving the source data alongside the animated output.
 
 ### Converting from JSON/JSONL files
 
 Convert a specific session file directly:
 
 ```bash
-claude-code-transcripts json session.json -o output-directory/
-claude-code-transcripts json session.jsonl --open
+agent-log-gif json session.json -o output-directory/
+agent-log-gif json session.jsonl --open
 ```
 This works with both JSONL files in the `~/.claude/projects/` folder and JSON session files extracted from Claude Code for web.
 
@@ -175,10 +142,10 @@ The `json` command can take a URL to a JSON or JSONL file as an alternative to a
 
 ### Converting all sessions
 
-Convert all your local Claude Code sessions to a browsable HTML archive:
+Convert all your local Claude Code sessions to animated gifs:
 
 ```bash
-claude-code-transcripts all
+agent-log-gif all
 ```
 
 This creates a directory structure with:
@@ -199,26 +166,26 @@ Examples:
 
 ```bash
 # Preview what would be converted
-claude-code-transcripts all --dry-run
+agent-log-gif all --dry-run
 
 # Convert all sessions and open in browser
-claude-code-transcripts all --open
+agent-log-gif all --open
 
 # Convert to a specific directory
-claude-code-transcripts all -o ./my-archive
+agent-log-gif all -o ./my-archive
 
 # Include agent sessions
-claude-code-transcripts all --include-agents
+agent-log-gif all --include-agents
 ```
 
 ## Development
 
 To contribute to this tool, first checkout the code. You can run the tests using `uv run`:
 ```bash
-cd claude-code-transcripts
+cd agent-log-gif
 uv run pytest
 ```
 And run your local development copy of the tool like this:
 ```bash
-uv run claude-code-transcripts --help
+uv run agent-log-gif --help
 ```

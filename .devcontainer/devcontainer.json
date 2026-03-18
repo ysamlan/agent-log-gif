@@ -1,0 +1,49 @@
+{
+  "name": "agent-log-gif",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:America/New_York}"
+    }
+  },
+  "userEnvProbe": "none",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "charliemarsh.ruff",
+        "eamodio.gitlens",
+        "monokai.theme-monokai-pro-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliemarsh.ruff",
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash",
+            "icon": "terminal-bash"
+          },
+          "zsh": {
+            "path": "zsh"
+          }
+        }
+      }
+    }
+  },
+  "remoteUser": "node",
+  "mounts": [
+    "source=alg-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=alg-claude-config-${devcontainerId},target=/home/node/.claude,type=volume",
+    "source=alg-codex-config-${devcontainerId},target=/home/node/.codex,type=volume",
+    "source=alg-venv-${devcontainerId},target=/workspace/.venv_devcontainer,type=volume",
+    "source=uv-cache-${localEnv:UV_CACHE_ARCH:linux-arm64},target=/home/node/.cache/uv,type=volume"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "workspaceFolder": "/workspace",
+  "postStartCommand": "mise trust && uv sync && git config core.hooksPath .githooks",
+  "waitFor": "postStartCommand"
+}
