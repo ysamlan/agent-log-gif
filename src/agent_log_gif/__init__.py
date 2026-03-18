@@ -143,9 +143,7 @@ def get_session_summary(filepath, max_length=200):
                     content = msg.get("content", "")
                     text = extract_text_from_content(content)
                     if text:
-                        if len(text) > max_length:
-                            return text[: max_length - 3] + "..."
-                        return text
+                        return truncate_text(text, max_length)
             return "(no summary)"
     except Exception:
         return "(no summary)"
@@ -624,14 +622,41 @@ def _extract_codex_reasoning_summary(summary):
 
 
 def _get_codex_jsonl_summary(filepath, max_length=200):
-    """Extract summary from a Codex session JSONL file."""
-    parsed = parse_session_file(filepath)
-    for entry in parsed.get("loglines", []):
-        if entry.get("type") != "user":
-            continue
-        text = extract_text_from_content(entry.get("message", {}).get("content", ""))
-        if text:
-            return truncate_text(text, max_length)
+    """Extract summary from a Codex session JSONL file.
+
+    Streams through the file and returns as soon as the first real user
+    prompt is found, avoiding a full parse.
+    """
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if obj.get("type") != "response_item":
+                continue
+            payload = obj.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("type") != "message" or payload.get("role") != "user":
+                continue
+
+            texts = _extract_codex_message_texts(
+                payload.get("content", []), "input_text"
+            )
+            if not texts:
+                continue
+            if all(_is_codex_setup_text(t) for t in texts):
+                continue
+            if all(_is_codex_transport_text(t) for t in texts):
+                continue
+
+            return truncate_text("\n\n".join(texts).strip(), max_length)
+
     return "(no summary)"
 
 
@@ -1553,184 +1578,9 @@ def generate_index_pagination_html(total_pages):
 
 
 def generate_html(json_path, output_dir, github_repo=None):
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True)
-
-    # Load session file (supports both JSON and JSONL)
+    """Generate HTML from a session file path (JSON or JSONL)."""
     data = parse_session_file(json_path)
-
-    loglines = data.get("loglines", [])
-    transcript_source = data.get("transcript_source", "claude")
-    transcript_label = get_transcript_label(transcript_source)
-
-    # Auto-detect GitHub repo if not provided
-    if github_repo is None and transcript_source != "codex":
-        github_repo = detect_github_repo(loglines)
-        if github_repo:
-            print(f"Auto-detected GitHub repo: {github_repo}")
-        else:
-            print(
-                "Warning: Could not auto-detect GitHub repo. Commit links will be disabled."
-            )
-
-    # Set module-level variable for render functions
-    global _github_repo
-    _github_repo = github_repo
-
-    conversations = []
-    current_conv = None
-    for entry in loglines:
-        log_type = entry.get("type")
-        timestamp = entry.get("timestamp", "")
-        is_compact_summary = entry.get("isCompactSummary", False)
-        message_data = entry.get("message", {})
-        if not message_data:
-            continue
-        # Convert message dict to JSON string for compatibility with existing render functions
-        message_json = json.dumps(message_data)
-        is_user_prompt = False
-        user_text = None
-        if log_type == "user":
-            content = message_data.get("content", "")
-            text = extract_text_from_content(content)
-            if text:
-                is_user_prompt = True
-                user_text = text
-        if is_user_prompt:
-            if current_conv:
-                conversations.append(current_conv)
-            current_conv = {
-                "user_text": user_text,
-                "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
-                "is_continuation": bool(is_compact_summary),
-            }
-        elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
-    if current_conv:
-        conversations.append(current_conv)
-
-    total_convs = len(conversations)
-    total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
-
-    for page_num in range(1, total_pages + 1):
-        start_idx = (page_num - 1) * PROMPTS_PER_PAGE
-        end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
-        page_convs = conversations[start_idx:end_idx]
-        messages_html = []
-        for conv in page_convs:
-            is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
-                if msg_html:
-                    # Wrap continuation summaries in collapsed details
-                    if is_first and conv.get("is_continuation"):
-                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
-                    messages_html.append(msg_html)
-                is_first = False
-        pagination_html = generate_pagination_html(page_num, total_pages)
-        page_template = get_template("page.html")
-        page_content = page_template.render(
-            css=CSS,
-            js=JS,
-            page_num=page_num,
-            total_pages=total_pages,
-            transcript_label=transcript_label,
-            pagination_html=pagination_html,
-            messages_html="".join(messages_html),
-        )
-        (output_dir / f"page-{page_num:03d}.html").write_text(
-            page_content, encoding="utf-8"
-        )
-        print(f"Generated page-{page_num:03d}.html")
-
-    # Calculate overall stats and collect all commits for timeline
-    total_tool_counts = {}
-    total_messages = 0
-    all_commits = []  # (timestamp, hash, message, page_num, conv_index)
-    for i, conv in enumerate(conversations):
-        total_messages += len(conv["messages"])
-        stats = analyze_conversation(conv["messages"])
-        for tool, count in stats["tool_counts"].items():
-            total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        for commit_hash, commit_msg, commit_ts in stats["commits"]:
-            all_commits.append((commit_ts, commit_hash, commit_msg, page_num, i))
-    total_tool_calls = sum(total_tool_counts.values())
-    total_commits = len(all_commits)
-
-    # Build timeline items: prompts and commits merged by timestamp
-    timeline_items = []
-
-    # Add prompts
-    prompt_num = 0
-    for i, conv in enumerate(conversations):
-        if conv.get("is_continuation"):
-            continue
-        if conv["user_text"].startswith("Stop hook feedback:"):
-            continue
-        if conv["user_text"].strip().startswith("<turn_aborted>"):
-            continue
-        prompt_num += 1
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        msg_id = make_msg_id(conv["timestamp"])
-        link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
-
-        # Collect all messages including from subsequent continuation conversations
-        # This ensures long_texts from continuations appear with the original prompt
-        all_messages = list(conv["messages"])
-        for j in range(i + 1, len(conversations)):
-            if not conversations[j].get("is_continuation"):
-                break
-            all_messages.extend(conversations[j]["messages"])
-
-        # Analyze conversation for stats (excluding commits from inline display now)
-        stats = analyze_conversation(all_messages)
-        tool_stats_str = format_tool_stats(stats["tool_counts"])
-
-        long_texts_html = ""
-        for lt in stats["long_texts"]:
-            rendered_lt = render_markdown_text(lt)
-            long_texts_html += _macros.index_long_text(rendered_lt)
-
-        stats_html = _macros.index_stats(tool_stats_str, long_texts_html)
-
-        item_html = _macros.index_item(
-            prompt_num, link, conv["timestamp"], rendered_content, stats_html
-        )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
-
-    # Add commits as separate timeline items
-    for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
-        item_html = _macros.index_commit(
-            commit_hash, commit_msg, commit_ts, _github_repo
-        )
-        timeline_items.append((commit_ts, "commit", item_html))
-
-    # Sort by timestamp
-    timeline_items.sort(key=lambda x: x[0])
-    index_items = [item[2] for item in timeline_items]
-
-    index_pagination = generate_index_pagination_html(total_pages)
-    index_template = get_template("index.html")
-    index_content = index_template.render(
-        css=CSS,
-        js=JS,
-        transcript_label=transcript_label,
-        pagination_html=index_pagination,
-        prompt_num=prompt_num,
-        total_messages=total_messages,
-        total_tool_calls=total_tool_calls,
-        total_commits=total_commits,
-        total_pages=total_pages,
-        index_items_html="".join(index_items),
-    )
-    index_path = output_dir / "index.html"
-    index_path.write_text(index_content, encoding="utf-8")
-    print(
-        f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
-    )
+    generate_html_from_session_data(data, output_dir, github_repo=github_repo)
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
