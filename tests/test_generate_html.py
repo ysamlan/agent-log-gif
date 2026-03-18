@@ -428,6 +428,27 @@ class TestAnalyzeConversation:
         assert result["commits"][0][0] == "abc1234"
         assert "Add new feature" in result["commits"][0][1]
 
+    def test_ignores_commit_like_text_inside_code(self):
+        """Test that commit-like text in quoted code does not become a commit."""
+        messages = [
+            (
+                "user",
+                json.dumps(
+                    {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": 'assert "[main abc1234] Add fake commit" in output',
+                            }
+                        ]
+                    }
+                ),
+                "2025-01-01T00:00:00Z",
+            ),
+        ]
+        result = analyze_conversation(messages)
+        assert result["commits"] == []
+
 
 class TestFormatToolStats:
     """Tests for tool stats formatting."""
@@ -1186,11 +1207,30 @@ class TestParseSessionFile:
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert "Codex transcript" in index_html
         assert "Build a CLI summary command" in index_html
         assert "exec_command" in index_html
         assert "Implemented the CLI summary command." in page_html
         assert "AGENTS.md instructions" not in index_html
         assert index_html == snapshot_html
+
+    def test_codex_jsonl_skips_turn_aborted_prompt(self, tmp_path):
+        """Test that Codex transport markers are not treated as user prompts."""
+        session_file = tmp_path / "codex.jsonl"
+        session_file.write_text(
+            '{"timestamp":"2026-03-19T00:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<turn_aborted>\\nThe user interrupted the previous turn.\\n</turn_aborted>"}]}}\n'
+            '{"timestamp":"2026-03-19T00:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Real prompt"}]}}\n'
+            '{"timestamp":"2026-03-19T00:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Real answer"}]}}\n',
+            encoding="utf-8",
+        )
+
+        output_dir = tmp_path / "output"
+        generate_html(session_file, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        assert "Real prompt" in index_html
+        assert "<turn_aborted>" not in index_html
+        assert "1 prompts" in index_html or "1 prompt" in index_html
 
 
 class TestGetSessionSummary:

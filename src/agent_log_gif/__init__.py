@@ -35,8 +35,8 @@ def get_template(name):
     return _jinja_env.get_template(name)
 
 
-# Regex to match git commit output: [branch hash] message
-COMMIT_PATTERN = re.compile(r"\[[\w\-/]+ ([a-f0-9]{7,})\] (.+?)(?:\n|$)")
+# Regex to match git commit output when it appears as a standalone output line.
+COMMIT_PATTERN = re.compile(r"(?m)^\[[\w\-/]+ ([a-f0-9]{7,})\] ([^\n]+)$")
 
 # Regex to detect GitHub repo from git push output (e.g., github.com/owner/repo/pull/new/branch)
 GITHUB_REPO_PATTERN = re.compile(
@@ -498,7 +498,9 @@ def parse_session_file(filepath):
     else:
         # Standard JSON format
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        data.setdefault("transcript_source", "claude")
+        return data
 
 
 def _parse_jsonl_file(filepath):
@@ -533,7 +535,7 @@ def _parse_jsonl_file(filepath):
             except json.JSONDecodeError:
                 continue
 
-    return {"loglines": loglines}
+    return {"loglines": loglines, "transcript_source": "claude"}
 
 
 def _is_codex_setup_text(text):
@@ -548,6 +550,21 @@ def _is_codex_setup_text(text):
         "<INSTRUCTIONS>",
     )
     return stripped.startswith(setup_prefixes)
+
+
+def _is_codex_transport_text(text):
+    """Detect transport/meta user content that should not become a prompt."""
+    if not text:
+        return True
+
+    return text.strip().startswith("<turn_aborted>")
+
+
+def get_transcript_label(transcript_source):
+    """Return the display label for a transcript source."""
+    if transcript_source == "codex":
+        return "Codex transcript"
+    return "Claude Code transcript"
 
 
 def _parse_codex_tool_arguments(arguments):
@@ -654,6 +671,8 @@ def _parse_codex_jsonl_file(filepath):
 
                     if all(_is_codex_setup_text(text) for text in texts):
                         continue
+                    if all(_is_codex_transport_text(text) for text in texts):
+                        continue
 
                     loglines.append(
                         {
@@ -734,7 +753,7 @@ def _parse_codex_jsonl_file(filepath):
                     }
                 )
 
-    return {"loglines": loglines}
+    return {"loglines": loglines, "transcript_source": "codex"}
 
 
 class CredentialsError(Exception):
@@ -1541,9 +1560,11 @@ def generate_html(json_path, output_dir, github_repo=None):
     data = parse_session_file(json_path)
 
     loglines = data.get("loglines", [])
+    transcript_source = data.get("transcript_source", "claude")
+    transcript_label = get_transcript_label(transcript_source)
 
     # Auto-detect GitHub repo if not provided
-    if github_repo is None:
+    if github_repo is None and transcript_source != "codex":
         github_repo = detect_github_repo(loglines)
         if github_repo:
             print(f"Auto-detected GitHub repo: {github_repo}")
@@ -1614,6 +1635,7 @@ def generate_html(json_path, output_dir, github_repo=None):
             js=JS,
             page_num=page_num,
             total_pages=total_pages,
+            transcript_label=transcript_label,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
         )
@@ -1646,6 +1668,8 @@ def generate_html(json_path, output_dir, github_repo=None):
         if conv.get("is_continuation"):
             continue
         if conv["user_text"].startswith("Stop hook feedback:"):
+            continue
+        if conv["user_text"].strip().startswith("<turn_aborted>"):
             continue
         prompt_num += 1
         page_num = (i // PROMPTS_PER_PAGE) + 1
@@ -1693,6 +1717,7 @@ def generate_html(json_path, output_dir, github_repo=None):
     index_content = index_template.render(
         css=CSS,
         js=JS,
+        transcript_label=transcript_label,
         pagination_html=index_pagination,
         prompt_num=prompt_num,
         total_messages=total_messages,
@@ -2019,9 +2044,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     output_dir.mkdir(exist_ok=True, parents=True)
 
     loglines = session_data.get("loglines", [])
+    transcript_source = session_data.get("transcript_source", "claude")
+    transcript_label = get_transcript_label(transcript_source)
 
     # Auto-detect GitHub repo if not provided
-    if github_repo is None:
+    if github_repo is None and transcript_source != "codex":
         github_repo = detect_github_repo(loglines)
         if github_repo:
             click.echo(f"Auto-detected GitHub repo: {github_repo}")
@@ -2088,6 +2115,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             js=JS,
             page_num=page_num,
             total_pages=total_pages,
+            transcript_label=transcript_label,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
         )
@@ -2120,6 +2148,8 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         if conv.get("is_continuation"):
             continue
         if conv["user_text"].startswith("Stop hook feedback:"):
+            continue
+        if conv["user_text"].strip().startswith("<turn_aborted>"):
             continue
         prompt_num += 1
         page_num = (i // PROMPTS_PER_PAGE) + 1
@@ -2167,6 +2197,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     index_content = index_template.render(
         css=CSS,
         js=JS,
+        transcript_label=transcript_label,
         pagination_html=index_pagination,
         prompt_num=prompt_num,
         total_messages=total_messages,
