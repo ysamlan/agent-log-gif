@@ -5,7 +5,7 @@
 [![Tests](https://github.com/ysamlan/agent-log-gif/workflows/Test/badge.svg)](https://github.com/ysamlan/agent-log-gif/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ysamlan/agent-log-gif/blob/main/LICENSE)
 
-Convert Claude Code session files (JSON or JSONL) to animated GIFs or videos.
+Convert Claude Code or Codex session files (JSON or JSONL) to animated GIFs or videos.
 
 Forked from [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts); all Claude Code transcript parsing logic is based on that work.
 
@@ -26,13 +26,13 @@ uvx agent-log-gif --help
 
 ## Usage
 
-This tool converts Claude Code session files into animated gifs or videos.
+This tool converts Claude Code or Codex session files into animated gifs or videos.
 
 There are four commands available:
 
 - `local` (default) - select from local Claude Code sessions stored in `~/.claude/projects`
 - `web` - select from web sessions via the Claude API
-- `json` - convert a specific JSON or JSONL session file
+- `json` - convert a specific Claude Code or Codex JSON/JSONL session file
 - `all` - convert all local sessions to a browsable HTML archive
 
 The quickest way to view a recent local session:
@@ -136,9 +136,15 @@ Convert a specific session file directly:
 agent-log-gif json session.json -o output-directory/
 agent-log-gif json session.jsonl --open
 ```
-This works with both JSONL files in the `~/.claude/projects/` folder and JSON session files extracted from Claude Code for web.
+This works with:
+
+- JSONL files in the `~/.claude/projects/` folder
+- JSON session files extracted from Claude Code for web
+- Codex JSONL session files such as those under `~/.codex/sessions/`
 
 The `json` command can take a URL to a JSON or JSONL file as an alternative to a path on disk.
+
+Codex support is currently file-based via `json`. The `local`, `web`, and `all` commands still target Claude Code sessions.
 
 ### Converting all sessions
 

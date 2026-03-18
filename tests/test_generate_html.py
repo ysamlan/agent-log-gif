@@ -1126,6 +1126,32 @@ class TestParseSessionFile:
                 assert "timestamp" in entry
                 assert "message" in entry
 
+    def test_parses_codex_jsonl_format(self):
+        """Test that Codex JSONL format is normalized to the standard format."""
+        fixture_path = Path(__file__).parent / "sample_codex_session.jsonl"
+        result = parse_session_file(fixture_path)
+
+        assert "loglines" in result
+        assert [entry["type"] for entry in result["loglines"]] == [
+            "user",
+            "assistant",
+            "assistant",
+            "user",
+            "assistant",
+        ]
+
+        prompt = result["loglines"][0]
+        assert prompt["message"]["content"] == "Build a CLI summary command"
+
+        tool_use = result["loglines"][2]["message"]["content"][0]
+        assert tool_use["type"] == "tool_use"
+        assert tool_use["name"] == "exec_command"
+        assert tool_use["input"] == {"cmd": "pytest -q", "workdir": "/workspace"}
+
+        tool_result = result["loglines"][3]["message"]["content"][0]
+        assert tool_result["type"] == "tool_result"
+        assert "[main abc1234] Add Codex support" in tool_result["content"]
+
     def test_jsonl_skips_non_message_entries(self):
         """Test that summary and file-history-snapshot entries are skipped."""
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
@@ -1153,6 +1179,19 @@ class TestParseSessionFile:
         assert "hello world" in index_html.lower()
         assert index_html == snapshot_html
 
+    def test_codex_jsonl_generates_html(self, output_dir, snapshot_html):
+        """Test that Codex JSONL files can be converted to HTML."""
+        fixture_path = Path(__file__).parent / "sample_codex_session.jsonl"
+        generate_html(fixture_path, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert "Build a CLI summary command" in index_html
+        assert "exec_command" in index_html
+        assert "Implemented the CLI summary command." in page_html
+        assert "AGENTS.md instructions" not in index_html
+        assert index_html == snapshot_html
+
 
 class TestGetSessionSummary:
     """Tests for get_session_summary which extracts summary from session files."""
@@ -1162,6 +1201,12 @@ class TestGetSessionSummary:
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
         summary = get_session_summary(fixture_path)
         assert summary == "Test session for JSONL parsing"
+
+    def test_gets_summary_from_codex_jsonl(self):
+        """Test extracting the first real user message from a Codex JSONL file."""
+        fixture_path = Path(__file__).parent / "sample_codex_session.jsonl"
+        summary = get_session_summary(fixture_path)
+        assert summary == "Build a CLI summary command"
 
     def test_gets_first_user_message_if_no_summary(self, tmp_path):
         """Test falling back to first user message when no summary entry."""

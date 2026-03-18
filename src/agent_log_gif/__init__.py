@@ -1,4 +1,4 @@
-"""Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
+"""Convert Claude Code or Codex session JSON to HTML pages with pagination."""
 
 import html
 import json
@@ -75,6 +75,42 @@ def extract_text_from_content(content):
     return ""
 
 
+def truncate_text(text, max_length):
+    """Truncate text to max_length with ellipsis."""
+    if len(text) > max_length:
+        return text[: max_length - 3] + "..."
+    return text
+
+
+def read_first_jsonl_object(filepath):
+    """Return the first valid JSON object from a JSONL file, or None."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def is_codex_jsonl(first_obj):
+    """Detect Codex session JSONL based on its event envelope."""
+    if not isinstance(first_obj, dict):
+        return False
+    return (
+        first_obj.get("type")
+        in {
+            "session_meta",
+            "event_msg",
+            "response_item",
+        }
+        and "payload" in first_obj
+    )
+
+
 # Module-level variable for GitHub repo (set by generate_html)
 _github_repo = None
 
@@ -92,6 +128,9 @@ def get_session_summary(filepath, max_length=200):
     filepath = Path(filepath)
     try:
         if filepath.suffix == ".jsonl":
+            first_obj = read_first_jsonl_object(filepath)
+            if is_codex_jsonl(first_obj):
+                return _get_codex_jsonl_summary(filepath, max_length)
             return _get_jsonl_summary(filepath, max_length)
         else:
             # For JSON files, try to get first user message
@@ -124,10 +163,7 @@ def _get_jsonl_summary(filepath, max_length=200):
                     obj = json.loads(line)
                     # First priority: summary type entries
                     if obj.get("type") == "summary" and obj.get("summary"):
-                        summary = obj["summary"]
-                        if len(summary) > max_length:
-                            return summary[: max_length - 3] + "..."
-                        return summary
+                        return truncate_text(obj["summary"], max_length)
                 except json.JSONDecodeError:
                     continue
 
@@ -147,9 +183,7 @@ def _get_jsonl_summary(filepath, max_length=200):
                         content = obj["message"]["content"]
                         text = extract_text_from_content(content)
                         if text and not text.startswith("<"):
-                            if len(text) > max_length:
-                                return text[: max_length - 3] + "..."
-                            return text
+                            return truncate_text(text, max_length)
                 except json.JSONDecodeError:
                     continue
     except Exception:
@@ -457,6 +491,9 @@ def parse_session_file(filepath):
     filepath = Path(filepath)
 
     if filepath.suffix == ".jsonl":
+        first_obj = read_first_jsonl_object(filepath)
+        if is_codex_jsonl(first_obj):
+            return _parse_codex_jsonl_file(filepath)
         return _parse_jsonl_file(filepath)
     else:
         # Standard JSON format
@@ -495,6 +532,207 @@ def _parse_jsonl_file(filepath):
                 loglines.append(entry)
             except json.JSONDecodeError:
                 continue
+
+    return {"loglines": loglines}
+
+
+def _is_codex_setup_text(text):
+    """Detect setup/instruction content that should not appear as a prompt."""
+    if not text:
+        return True
+
+    stripped = text.strip()
+    setup_prefixes = (
+        "# AGENTS.md instructions",
+        "<environment_context>",
+        "<INSTRUCTIONS>",
+    )
+    return stripped.startswith(setup_prefixes)
+
+
+def _parse_codex_tool_arguments(arguments):
+    """Parse Codex tool arguments into a dict for tool rendering."""
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError:
+            return {"arguments": arguments}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"arguments": parsed}
+    if arguments is None:
+        return {}
+    return {"arguments": arguments}
+
+
+def _extract_codex_message_texts(content, item_type):
+    """Extract text snippets from Codex message content items."""
+    texts = []
+    if not isinstance(content, list):
+        return texts
+
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != item_type:
+            continue
+        text = item.get("text", "")
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _extract_codex_reasoning_summary(summary):
+    """Extract plain-text reasoning summary from Codex reasoning payloads."""
+    if isinstance(summary, str):
+        return summary.strip()
+    if not isinstance(summary, list):
+        return ""
+
+    parts = []
+    for item in summary:
+        if isinstance(item, str):
+            if item.strip():
+                parts.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text", "")
+        if text:
+            parts.append(text.strip())
+
+    return "\n\n".join(part for part in parts if part)
+
+
+def _get_codex_jsonl_summary(filepath, max_length=200):
+    """Extract summary from a Codex session JSONL file."""
+    parsed = parse_session_file(filepath)
+    for entry in parsed.get("loglines", []):
+        if entry.get("type") != "user":
+            continue
+        text = extract_text_from_content(entry.get("message", {}).get("content", ""))
+        if text:
+            return truncate_text(text, max_length)
+    return "(no summary)"
+
+
+def _parse_codex_jsonl_file(filepath):
+    """Parse Codex JSONL session events into the standard loglines format."""
+    loglines = []
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if obj.get("type") != "response_item":
+                continue
+
+            payload = obj.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+
+            timestamp = obj.get("timestamp", "")
+            payload_type = payload.get("type")
+
+            if payload_type == "message":
+                role = payload.get("role")
+                content = payload.get("content", [])
+
+                if role == "user":
+                    texts = _extract_codex_message_texts(content, "input_text")
+                    if not texts:
+                        continue
+
+                    if all(_is_codex_setup_text(text) for text in texts):
+                        continue
+
+                    loglines.append(
+                        {
+                            "type": "user",
+                            "timestamp": timestamp,
+                            "message": {
+                                "role": "user",
+                                "content": "\n\n".join(texts).strip(),
+                            },
+                        }
+                    )
+                elif role == "assistant":
+                    texts = _extract_codex_message_texts(content, "output_text")
+                    if not texts:
+                        continue
+
+                    blocks = [{"type": "text", "text": text} for text in texts]
+                    loglines.append(
+                        {
+                            "type": "assistant",
+                            "timestamp": timestamp,
+                            "message": {
+                                "role": "assistant",
+                                "content": blocks,
+                            },
+                        }
+                    )
+            elif payload_type == "function_call":
+                loglines.append(
+                    {
+                        "type": "assistant",
+                        "timestamp": timestamp,
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": payload.get("name", "Unknown tool"),
+                                    "id": payload.get("call_id", ""),
+                                    "input": _parse_codex_tool_arguments(
+                                        payload.get("arguments")
+                                    ),
+                                }
+                            ],
+                        },
+                    }
+                )
+            elif payload_type == "function_call_output":
+                loglines.append(
+                    {
+                        "type": "user",
+                        "timestamp": timestamp,
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "content": payload.get("output", ""),
+                                    "is_error": bool(payload.get("is_error", False)),
+                                }
+                            ],
+                        },
+                    }
+                )
+            elif payload_type == "reasoning":
+                thinking = _extract_codex_reasoning_summary(payload.get("summary"))
+                if not thinking:
+                    continue
+
+                loglines.append(
+                    {
+                        "type": "assistant",
+                        "timestamp": timestamp,
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "thinking", "thinking": thinking}],
+                        },
+                    }
+                )
 
     return {"loglines": loglines}
 
@@ -1473,7 +1711,7 @@ def generate_html(json_path, output_dir, github_repo=None):
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="agent-log-gif")
 def cli():
-    """Convert Claude Code session JSON to mobile-friendly HTML pages."""
+    """Convert Claude Code or Codex session JSON to mobile-friendly HTML pages."""
     pass
 
 
@@ -1669,7 +1907,7 @@ def fetch_url_to_tempfile(url):
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
 def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
-    """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
+    """Convert a Claude Code or Codex session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
         click.echo(f"Fetching {json_file}...")
