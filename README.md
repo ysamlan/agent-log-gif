@@ -27,6 +27,11 @@ Or pick a specific session from disk:
 uvx agent-log-gif json ~/.claude/projects/<project>/<session>.jsonl
 ```
 
+Help on all options:
+```bash
+uvx agent-log-gif json --help
+```
+
 To install permanently:
 
 ```bash
@@ -47,10 +52,10 @@ Install [gifsicle](https://www.lcdf.org/gifsicle/) for 80% better compression of
 # GIF (default)
 agent-log-gif json session.jsonl
 
-# Animated AVIF (requires ffmpeg)
+# Animated AVIF
 agent-log-gif json session.jsonl --format avif
 
-# MP4 with background music (requires ffmpeg)
+# MP4 with (optional) background music
 agent-log-gif json session.jsonl --format mp4 --music track.mp3 --loop-music
 
 # Specify output file
@@ -81,11 +86,11 @@ agent-log-gif json session.jsonl -o demo.mp4 --format mp4 --music track.mp3 --lo
 
 ### Window chrome
 
-Default is macOS-style with rounded corners and traffic-light buttons. Choose a different style:
+Default is macOS-26-like with rounded corners and traffic-light buttons. Choose a different style:
 
 ```bash
 agent-log-gif json session.jsonl --chrome none         # no window frame
-agent-log-gif json session.jsonl --chrome mac          # macOS (default)
+agent-log-gif json session.jsonl --chrome mac          # macOS, rounded corners (default)
 agent-log-gif json session.jsonl --chrome mac-square   # macOS, square corners
 agent-log-gif json session.jsonl --chrome windows      # Windows 11
 agent-log-gif json session.jsonl --chrome linux        # GNOME/Ubuntu
@@ -146,6 +151,9 @@ agent-log-gif json [OPTIONS] [FILE]
   --rows INT                   Terminal height in rows (default: 30)
   --font-size INT              Font size in pixels (default: 16)
   --show TYPES                 Extra content: tools, calls, thinking, all
+  --speed FLOAT                Typing speed multiplier (default: 1.0)
+  --spinner-time FLOAT         Spinner duration multiplier (default: 1.0)
+  --thinking-verbs TEXT        Custom spinner verbs (comma-separated)
   --open / --no-open           Open result in default viewer
 
 agent-log-gif search KEYWORD [--source claude|codex]

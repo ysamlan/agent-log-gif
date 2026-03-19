@@ -76,6 +76,9 @@ def _session_to_media(
     rows=None,
     font_size=None,
     show=None,
+    speed=None,
+    spinner_time=None,
+    thinking_verbs=None,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -171,10 +174,18 @@ def _session_to_media(
     renderer = TerminalRenderer(theme, chrome=chrome_style)
 
     transcript_source = data.get("transcript_source", "claude")
+    anim_kwargs = {}
+    if speed is not None:
+        anim_kwargs["speed"] = speed
+    if spinner_time is not None:
+        anim_kwargs["spinner_time"] = spinner_time
+    if thinking_verbs is not None:
+        anim_kwargs["thinking_verbs"] = [v.strip() for v in thinking_verbs.split(",")]
     frames = generate_frames(
         selected_events,
         renderer=renderer,
         transcript_source=transcript_source,
+        **anim_kwargs,
     )
 
     if not frames:
@@ -500,6 +511,23 @@ def _media_options(fn):
                 default=None,
                 help="Extra content to show: tools, calls, thinking, all (comma-separated).",
             ),
+            click.option(
+                "--speed",
+                type=float,
+                default=None,
+                help="Typing speed multiplier (default: 1.0, higher = faster).",
+            ),
+            click.option(
+                "--spinner-time",
+                type=float,
+                default=None,
+                help="Spinner duration multiplier (default: 1.0, lower = shorter).",
+            ),
+            click.option(
+                "--thinking-verbs",
+                default=None,
+                help="Comma-separated spinner verbs (e.g. Reticulating,Sleeping).",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -538,6 +566,9 @@ def local_cmd(
     rows,
     font_size,
     show,
+    speed,
+    spinner_time,
+    thinking_verbs,
     open_browser,
     limit,
 ):
@@ -668,6 +699,9 @@ def local_cmd(
         rows=rows,
         font_size=font_size,
         show=show,
+        speed=speed,
+        spinner_time=spinner_time,
+        thinking_verbs=thinking_verbs,
     )
 
     if should_open:
@@ -711,6 +745,9 @@ def json_cmd(
     rows,
     font_size,
     show,
+    speed,
+    spinner_time,
+    thinking_verbs,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -751,6 +788,9 @@ def json_cmd(
         rows=rows,
         font_size=font_size,
         show=show,
+        speed=speed,
+        spinner_time=spinner_time,
+        thinking_verbs=thinking_verbs,
     )
 
     if open_browser:

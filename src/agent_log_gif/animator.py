@@ -101,6 +101,9 @@ def generate_frames(
     theme: TerminalTheme | None = None,
     renderer: TerminalRenderer | None = None,
     transcript_source: str = "claude",
+    speed: float = 1.0,
+    spinner_time: float = 1.0,
+    thinking_verbs: list[str] | None = None,
 ) -> list[tuple[Image.Image, int]]:
     """Convert replay events into animated frames.
 
@@ -110,6 +113,9 @@ def generate_frames(
                 THINKING (when included via --show).
         theme: Terminal theme (uses defaults if None). Ignored if renderer is provided.
         renderer: Terminal renderer (creates one from theme if None).
+        speed: Typing speed multiplier (2.0 = twice as fast, 0.5 = half speed).
+        spinner_time: Spinner duration multiplier (0.5 = half the spinner cycles).
+        thinking_verbs: Custom spinner verb list. Defaults to built-in whimsical verbs.
 
     Returns:
         List of (PIL.Image, duration_ms) tuples.
@@ -119,6 +125,19 @@ def generate_frames(
             theme = TerminalTheme()
         renderer = TerminalRenderer(theme)
     theme = renderer.theme
+
+    # Apply speed multiplier to typing animation
+    user_chars = max(1, int(USER_CHARS_PER_FRAME * speed))
+    user_ms = max(10, int(USER_FRAME_MS / speed))
+    asst_chars = max(1, int(ASSISTANT_CHARS_PER_FRAME * speed))
+    asst_ms = max(10, int(ASSISTANT_FRAME_MS / speed))
+    pause_ms = max(50, int(PAUSE_MS / speed))
+
+    # Apply spinner_time multiplier
+    spin_cycles = max(1, int(SPINNER_CYCLES * spinner_time))
+
+    # Custom or default verbs
+    verbs = thinking_verbs if thinking_verbs is not None else SPINNER_VERBS
 
     frames: list[tuple[Image.Image, int]] = []
     # Persistent text buffer (list of styled lines) that grows over time
@@ -146,7 +165,7 @@ def generate_frames(
                     [(SEPARATOR_CHAR * separator_width, theme.separator_color)]
                 )
                 buffer.append([])  # blank line after separator
-                frames.append(_snap(buffer, PAUSE_MS))
+                frames.append(_snap(buffer, pause_ms))
 
             # User types directly on the bottom prompt line
             _animate_user_typing(
@@ -155,13 +174,15 @@ def generate_frames(
                 renderer=renderer,
                 text=event.text,
                 theme=theme,
+                chars_per_frame=user_chars,
+                frame_ms=user_ms,
             )
 
             # Blank line after user message before spinner/response
             buffer.append([])
 
             # Pause after user message
-            frames.append(_snap(buffer, PAUSE_MS))
+            frames.append(_snap(buffer, pause_ms))
 
             # Spinner animation
             _animate_spinner(
@@ -171,6 +192,8 @@ def generate_frames(
                 theme=theme,
                 prompt_area=prompt_area,
                 transcript_source=transcript_source,
+                cycles=spin_cycles,
+                verbs=verbs,
             )
 
             last_event_type = event.type
@@ -185,19 +208,19 @@ def generate_frames(
                 prefix_char=ASSISTANT_CHAR,
                 prefix_color=theme.assistant_color,
                 text_color=theme.foreground,
-                chars_per_frame=ASSISTANT_CHARS_PER_FRAME,
-                frame_ms=ASSISTANT_FRAME_MS,
+                chars_per_frame=asst_chars,
+                frame_ms=asst_ms,
                 cols=theme.cols,
                 prompt_area=prompt_area,
             )
 
             # Brief pause after assistant
-            frames.append(_snap(buffer, PAUSE_MS))
+            frames.append(_snap(buffer, pause_ms))
             last_event_type = event.type
 
         elif event.type == EventType.TOOL_CALL:
             _snap_muted_block(buffer, f"{BLOCK_CHAR} ", event.text, theme)
-            frames.append(_snap(buffer, PAUSE_MS))
+            frames.append(_snap(buffer, pause_ms))
             last_event_type = event.type
 
         elif event.type == EventType.TOOL_RESULT:
@@ -209,7 +232,7 @@ def generate_frames(
                 max_lines=TOOL_RESULT_MAX_LINES,
                 trailing_blank=True,
             )
-            frames.append(_snap(buffer, PAUSE_MS))
+            frames.append(_snap(buffer, pause_ms))
             last_event_type = event.type
 
         elif event.type == EventType.THINKING:
@@ -221,7 +244,7 @@ def generate_frames(
                 max_lines=THINKING_MAX_LINES,
                 trailing_blank=True,
             )
-            frames.append(_snap(buffer, PAUSE_MS))
+            frames.append(_snap(buffer, pause_ms))
             last_event_type = event.type
 
     # Hold final frame a bit longer
@@ -239,6 +262,8 @@ def _animate_user_typing(
     renderer: TerminalRenderer,
     text: str,
     theme: TerminalTheme,
+    chars_per_frame: int = USER_CHARS_PER_FRAME,
+    frame_ms: int = USER_FRAME_MS,
 ) -> None:
     """Animate user typing on the bottom prompt line, then 'send' it to the buffer.
 
@@ -255,7 +280,7 @@ def _animate_user_typing(
     # Progressive typing — input area grows as text wraps
     chars_typed = 0
     while chars_typed < len(text):
-        chars_typed = min(chars_typed + USER_CHARS_PER_FRAME, len(text))
+        chars_typed = min(chars_typed + chars_per_frame, len(text))
         visible = text[:chars_typed]
 
         # Wrap the visible text into input area lines (all highlighted)
@@ -281,7 +306,7 @@ def _animate_user_typing(
 
         # Content above + growing input area at bottom (no gap — it IS the input)
         snapshot = buffer + input_lines
-        frames.append((renderer.render_frame(snapshot), USER_FRAME_MS))
+        frames.append((renderer.render_frame(snapshot), frame_ms))
 
     # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
     wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
@@ -371,6 +396,8 @@ def _animate_spinner(
     theme: TerminalTheme,
     prompt_area: list[StyledLine],
     transcript_source: str = "claude",
+    cycles: int = SPINNER_CYCLES,
+    verbs: list[str] | None = None,
 ) -> None:
     """Add spinner animation frames between user and assistant messages.
 
@@ -380,7 +407,7 @@ def _animate_spinner(
     """
     if transcript_source == "codex":
         # Codex style: "• Working (Xs · esc to interrupt)" — static, no animation
-        total_frames = SPINNER_CYCLES * len(SPINNER_FRAMES)  # same duration
+        total_frames = cycles * len(SPINNER_FRAMES)
         for i in range(total_frames):
             elapsed = (i * SPINNER_FRAME_MS) // 1000
             spinner_line: StyledLine = [
@@ -392,15 +419,16 @@ def _animate_spinner(
             frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
     else:
         # Claude Code style: cycling star + random verb in brand orange
-        verb = random.choice(SPINNER_VERBS)
-        total_frames = len(SPINNER_FRAMES) * SPINNER_CYCLES
+        verb_list = verbs if verbs is not None else SPINNER_VERBS
+        verb = random.choice(verb_list)
+        total_frames = len(SPINNER_FRAMES) * cycles
 
         for i in range(total_frames):
             frame_char = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
 
             spinner_line: StyledLine = [
                 (f"{frame_char} ", SPINNER_COLOR),
-                (f"{verb}…", SPINNER_COLOR),
+                (f"{verb}\u2026", SPINNER_COLOR),
                 (" (esc to interrupt)", theme.comment),
             ]
 
