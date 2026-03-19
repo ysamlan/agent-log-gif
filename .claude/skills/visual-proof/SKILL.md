@@ -1,6 +1,8 @@
 ---
 name: visual-proof
 description: Document visual output with GIF/image captures and proof-of-work reports. Use after making changes to the rendering pipeline (theme, renderer, animator, spinner) to show what the output looks like. Produces a showboat markdown document with embedded GIF frames and test results. Trigger when making visual changes, when the user asks to "show what it looks like" or "show me the output", or when completing work that changes GIF/video appearance.
+metadata:
+  internal: true
 ---
 
 # Visual Proof

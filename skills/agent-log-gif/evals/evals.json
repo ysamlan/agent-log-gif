@@ -1,0 +1,39 @@
+{
+  "skill_name": "agent-log-gif",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "hey can you make a gif of my last coding session? I was working on the auth middleware earlier today",
+      "expected_output": "Should check for uvx, search for sessions matching 'auth middleware', present matches for confirmation, then generate a GIF with OS-appropriate chrome style and --open flag",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I want to create an animated replay of a session but I want to customize how it looks — dark theme, show the tool usage, linux window frame",
+      "expected_output": "Should walk through options, use --chrome linux, suggest dark color schemes, use --show tools, and construct the right uvx command",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "show me my recent Claude Code sessions so I can pick one to turn into a gif",
+      "expected_output": "Should list recent sessions from ~/.claude/projects/ with summaries and dates in a numbered picker format, then generate after user picks",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "make an mp4 of the session at tests/sample_session.jsonl with the Catppuccin Mocha color scheme",
+      "expected_output": "Should use uvx agent-log-gif json tests/sample_session.jsonl -o <name>.mp4 --format mp4 --color-scheme 'Catppuccin Mocha' --open, checking for ffmpeg first",
+      "files": [
+        "tests/sample_session.jsonl"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "generate a gif from tests/sample_codex_session.jsonl",
+      "expected_output": "Should handle Codex session file correctly — use uvx agent-log-gif json with the file path, detect it's Codex format automatically",
+      "files": [
+        "tests/sample_codex_session.jsonl"
+      ]
+    }
+  ]
+}
