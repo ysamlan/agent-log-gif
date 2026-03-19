@@ -71,16 +71,17 @@ def generate_frames(
     Args:
         events: List of ReplayEvent to animate. Only USER_MESSAGE and
                 ASSISTANT_MESSAGE are rendered; others are skipped.
-        theme: Terminal theme (uses defaults if None).
+        theme: Terminal theme (uses defaults if None). Ignored if renderer is provided.
         renderer: Terminal renderer (creates one from theme if None).
 
     Returns:
         List of (PIL.Image, duration_ms) tuples.
     """
-    if theme is None:
-        theme = TerminalTheme()
     if renderer is None:
+        if theme is None:
+            theme = TerminalTheme()
         renderer = TerminalRenderer(theme)
+    theme = renderer.theme
 
     frames: list[tuple[Image.Image, int]] = []
     # Persistent text buffer (list of styled lines) that grows over time

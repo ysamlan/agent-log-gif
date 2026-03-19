@@ -8,6 +8,13 @@ Turn your Claude Code and Codex sessions into animated terminal replays. Share t
 
 ![demo](demo.gif)
 
+<details>
+<summary>Windows chrome + Codex session</summary>
+
+![windows-codex](docs/demo-windows-codex.gif)
+
+</details>
+
 ## Quick start
 
 ```bash
@@ -98,6 +105,26 @@ agent-log-gif json session.jsonl -o demo.mp4 --format mp4 --music track.mp3
 agent-log-gif json session.jsonl -o demo.mp4 --format mp4 --music track.mp3 --loop-music
 ```
 
+### Window chrome
+
+Default is macOS-style with rounded corners and traffic-light buttons. Choose a different style:
+
+```bash
+agent-log-gif json session.jsonl --chrome none         # no window frame
+agent-log-gif json session.jsonl --chrome mac          # macOS (default)
+agent-log-gif json session.jsonl --chrome mac-square   # macOS, square corners
+agent-log-gif json session.jsonl --chrome windows      # Windows 11
+agent-log-gif json session.jsonl --chrome linux        # GNOME/Ubuntu
+```
+
+### Color scheme
+
+480+ terminal color schemes bundled from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes). Default is Dracula.
+
+```bash
+agent-log-gif json session.jsonl --color-scheme "Catppuccin Mocha"
+```
+
 ### Custom font
 
 Default is [DejaVu Sans Mono](https://dejavu-fonts.github.io/) (bundled). Override with any TTF:
@@ -136,6 +163,8 @@ agent-log-gif json [OPTIONS] FILE
   --turns TEXT             N for first N turns, M,N for range
   --music PATH             Music track for MP4
   --loop-music             Loop music if shorter than video
+  --chrome STYLE           Window chrome: none|mac|mac-square|windows|linux
+  --color-scheme NAME      Terminal color scheme (e.g. Dracula, Nord)
   --font PATH              Custom TTF font file
   --open / --no-open       Open result in default viewer
 ```
@@ -143,6 +172,7 @@ agent-log-gif json [OPTIONS] FILE
 ## Credits
 
 Session parsing logic originally based on [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts).
+Color schemes from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) by Mark Badolato (MIT license).
 
 ## Development
 

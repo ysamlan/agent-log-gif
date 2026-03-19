@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
+from agent_log_gif.chrome import ChromeStyle, draw_titlebar, get_titlebar_height
 from agent_log_gif.theme import TerminalTheme
 
 # Type alias: a styled line is a list of (text, hex_color) segments
@@ -14,31 +15,27 @@ StyledLine = list[StyledSegment]
 # The renderer draws a subtle background rectangle behind highlighted lines.
 HIGHLIGHT_MARKER: StyledSegment = ("", "HIGHLIGHT")
 
-# Title bar constants
-TITLEBAR_HEIGHT = 36
-TITLEBAR_COLOR = "#21222C"  # slightly darker than Dracula background
-TRAFFIC_LIGHT_Y = 18  # center Y of dots in title bar
-TRAFFIC_LIGHT_X_START = 18  # X of first dot
-TRAFFIC_LIGHT_SPACING = 22  # spacing between dot centers
-TRAFFIC_LIGHT_RADIUS = 6
-TRAFFIC_LIGHT_COLORS = ["#FF5F56", "#FFBD2E", "#27C93F"]  # close, minimize, maximize
-CORNER_RADIUS = 10
-
 
 class TerminalRenderer:
     """Renders terminal frames as Pillow images.
 
     Each frame is a fixed-size viewport showing the bottom N rows of a
     text buffer. Text is drawn character-by-character using a monospace font.
-    A macOS-style title bar with traffic light dots is drawn above the content.
+    An optional window chrome (title bar with controls) is drawn above the content.
     """
 
     # Supersampling factor for antialiased text rendering
     _SSAA = 2
 
-    def __init__(self, theme: TerminalTheme | None = None, title: str = ""):
+    def __init__(
+        self,
+        theme: TerminalTheme | None = None,
+        title: str = "",
+        chrome: ChromeStyle = ChromeStyle.MAC,
+    ):
         self.theme = theme or TerminalTheme()
         self.title = title
+        self.chrome = chrome
 
         # Load fonts at 2x size for supersampled rendering
         ss = self._SSAA
@@ -67,73 +64,49 @@ class TerminalRenderer:
             + self.theme.padding_bottom
         )
 
+        titlebar_h = get_titlebar_height(chrome)
         self.image_width = content_width
-        self.image_height = TITLEBAR_HEIGHT + content_height
-        self._content_y_offset = TITLEBAR_HEIGHT
+        self.image_height = titlebar_h + content_height
+        self._content_y_offset = titlebar_h
 
         # Internal rendering dimensions (2x)
         self._ss_width = self.image_width * ss
         self._ss_height = self.image_height * ss
         self._ss_padding = self.theme.padding * ss
         self._ss_padding_bottom = self.theme.padding_bottom * ss
-        self._ss_titlebar_h = TITLEBAR_HEIGHT * ss
+        self._ss_titlebar_h = titlebar_h * ss
         self._ss_content_y = self._ss_titlebar_h
 
-        # Pre-render title bar template (background + rounded corners +
-        # traffic lights + title text) so render_frame only draws content.
+        # Pre-render title bar template (background + chrome + title text)
+        # so render_frame only draws content.
         self._titlebar_template = self._build_titlebar_template()
 
     def _build_titlebar_template(self) -> Image.Image:
         """Pre-render the full background + title bar as a reusable template.
 
         This image has the correct background color everywhere and the title
-        bar (rounded corners, traffic lights, title text) already drawn.
-        Copying it is much cheaper than re-drawing 9+ primitives per frame.
+        bar (corners, controls, title text) already drawn.
+        Copying it is much cheaper than re-drawing primitives per frame.
         """
         ss = self._SSAA
         bg = self.theme.hex_to_rgb(self.theme.background)
-        titlebar_bg = self.theme.hex_to_rgb(TITLEBAR_COLOR)
+        titlebar_bg = self.theme.hex_to_rgb(self.theme.titlebar_color)
 
         img = Image.new("RGB", (self._ss_width, self._ss_height), bg)
         draw = ImageDraw.Draw(img)
 
-        # Title bar background
-        draw.rectangle(
-            [0, 0, self._ss_width, self._ss_titlebar_h],
-            fill=titlebar_bg,
-        )
-
-        # Rounded top corners
-        _draw_rounded_top(
+        draw_titlebar(
             draw,
+            self.chrome,
             self._ss_width,
             self._ss_titlebar_h,
             titlebar_bg,
             bg,
-            corner_radius=CORNER_RADIUS * ss,
+            ss,
+            title=self.title,
+            title_font=self._title_font_ss if self.title else None,
+            comment_color=self.theme.hex_to_rgb(self.theme.comment),
         )
-
-        # Traffic light dots
-        for i, color in enumerate(TRAFFIC_LIGHT_COLORS):
-            cx = TRAFFIC_LIGHT_X_START * ss + i * TRAFFIC_LIGHT_SPACING * ss
-            cy = TRAFFIC_LIGHT_Y * ss
-            r = TRAFFIC_LIGHT_RADIUS * ss
-            rgb = self.theme.hex_to_rgb(color)
-            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb)
-
-        # Title text (centered)
-        if self.title:
-            title_color = self.theme.hex_to_rgb(self.theme.comment)
-            title_bbox = self._title_font_ss.getbbox(self.title)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_x = (self._ss_width - title_width) // 2
-            title_y = (self._ss_titlebar_h - (title_bbox[3] - title_bbox[1])) // 2
-            draw.text(
-                (title_x, title_y),
-                self.title,
-                fill=title_color,
-                font=self._title_font_ss,
-            )
 
         return img
 
@@ -163,8 +136,9 @@ class TerminalRenderer:
         num_visible = len(visible_lines)
         empty_rows_above = self.theme.rows - num_visible
 
-        # Highlight color for user prompt lines (Dracula current_line)
-        highlight_bg = self.theme.hex_to_rgb("#44475A")
+        highlight_bg = self.theme.hex_to_rgb(self.theme.selection_color)
+        # Vertical padding for the highlight bar so text isn't flush
+        hl_pad = 2 * self._SSAA
 
         for row_idx, line in enumerate(visible_lines):
             x = self._ss_padding
@@ -177,7 +151,7 @@ class TerminalRenderer:
             # Draw highlighted background for marked lines
             if any(seg == HIGHLIGHT_MARKER for seg in line):
                 draw.rectangle(
-                    [0, y, self._ss_width, y + self._char_height_ss],
+                    [0, y - hl_pad, self._ss_width, y + self._char_height_ss + hl_pad],
                     fill=highlight_bg,
                 )
 
@@ -207,23 +181,3 @@ class TerminalRenderer:
 
         # Downscale from 2x to 1x with Lanczos for smooth antialiasing
         return img.resize((self.image_width, self.image_height), Image.LANCZOS)
-
-
-def _draw_rounded_top(
-    draw, width, height, fill_color, bg_color, corner_radius=CORNER_RADIUS
-):
-    """Draw rounded top corners on the title bar.
-
-    Draws the corner arcs by overlaying background-colored circles at the
-    top-left and top-right corners.
-    """
-    r = corner_radius
-    # Top-left corner: draw bg circle that "cuts" the corner
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=bg_color)
-    draw.rectangle([0, 0, r, r], fill=bg_color)
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=fill_color)
-
-    # Top-right corner
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
-    draw.rectangle([width - r, 0, width, r], fill=bg_color)
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)

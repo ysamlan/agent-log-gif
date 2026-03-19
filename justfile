@@ -33,3 +33,15 @@ lint-check:
 # Run the CLI tool
 run *args:
     agent-log-gif "$@"
+
+# Regenerate demo GIFs for the README
+demos:
+    python scripts/generate_demos.py
+
+# Sync color schemes from iTerm2-Color-Schemes repo
+sync-schemes:
+    python scripts/sync_color_schemes.py
+
+# Generate Python dependency license audit
+licenses:
+    python scripts/generate_licenses.py

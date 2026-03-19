@@ -70,20 +70,14 @@ def _session_to_media(
     music=None,
     loop_music=False,
     font=None,
+    chrome="mac",
+    color_scheme=None,
 ):
-    """Core pipeline: session file → animated media.
-
-    Args:
-        session_path: Path to session JSON/JSONL file.
-        output_path: Path for the output file.
-        turns: Optional turn limit (int for first N, or (start, end) tuple).
-        fmt: Output format — "gif", "mp4", or "avif".
-        music: Optional path to music file (mp4 only).
-        loop_music: Whether to loop the music track.
-        font: Optional path to a TTF font file.
-    """
+    """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
     from agent_log_gif.backends.gif import save_gif
+    from agent_log_gif.chrome import ChromeStyle
+    from agent_log_gif.renderer import TerminalRenderer
     from agent_log_gif.theme import TerminalTheme
     from agent_log_gif.timeline import EventType, loglines_to_timeline, visible_events
 
@@ -141,11 +135,21 @@ def _session_to_media(
         if not font_path.exists():
             raise click.ClickException(f"Font file not found: {font}")
         theme_kwargs["font_path"] = str(font_path)
-    theme = TerminalTheme(**theme_kwargs)
+    if color_scheme:
+        try:
+            theme = TerminalTheme.from_color_scheme(color_scheme, **theme_kwargs)
+        except ValueError as e:
+            raise click.ClickException(str(e))
+    else:
+        theme = TerminalTheme(**theme_kwargs)
+    chrome_style = ChromeStyle(chrome.lower())
+    renderer = TerminalRenderer(theme, chrome=chrome_style)
 
     transcript_source = data.get("transcript_source", "claude")
     frames = generate_frames(
-        selected_events, theme=theme, transcript_source=transcript_source
+        selected_events,
+        renderer=renderer,
+        transcript_source=transcript_source,
     )
 
     if not frames:
@@ -266,6 +270,61 @@ def cli():
     pass
 
 
+def _media_options(fn):
+    """Shared Click options for commands that produce animated media."""
+    for decorator in reversed(
+        [
+            click.option(
+                "--format",
+                "fmt",
+                type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
+                default="gif",
+                help="Output format (default: gif). mp4/avif require ffmpeg.",
+            ),
+            click.option(
+                "--turns",
+                type=str,
+                default=None,
+                help="Turn selection: N for first N turns, M,N for turns M through N.",
+            ),
+            click.option(
+                "--music",
+                type=click.Path(exists=True),
+                default=None,
+                help="Music track to mix into video (mp4 only).",
+            ),
+            click.option(
+                "--loop-music",
+                is_flag=True,
+                default=False,
+                help="Loop the music track if shorter than the video.",
+            ),
+            click.option(
+                "--font",
+                type=click.Path(exists=True),
+                default=None,
+                help="Path to a TTF font file (default: bundled DejaVu Sans Mono).",
+            ),
+            click.option(
+                "--chrome",
+                type=click.Choice(
+                    ["none", "mac", "mac-square", "windows", "linux"],
+                    case_sensitive=False,
+                ),
+                default="mac",
+                help="Window chrome style (default: mac).",
+            ),
+            click.option(
+                "--color-scheme",
+                default=None,
+                help="Terminal color scheme (e.g. Dracula, 'Gruvbox Dark', Nord).",
+            ),
+        ]
+    ):
+        fn = decorator(fn)
+    return fn
+
+
 @cli.command("local")
 @click.option(
     "-o",
@@ -273,37 +332,7 @@ def cli():
     type=click.Path(),
     help="Output file path. Defaults to temp file.",
 )
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
-    default="gif",
-    help="Output format (default: gif). mp4/avif require ffmpeg.",
-)
-@click.option(
-    "--turns",
-    type=str,
-    default=None,
-    help="Turn selection: N for first N turns, M,N for turns M through N.",
-)
-@click.option(
-    "--music",
-    type=click.Path(exists=True),
-    default=None,
-    help="Music track to mix into video (mp4 only).",
-)
-@click.option(
-    "--loop-music",
-    is_flag=True,
-    default=False,
-    help="Loop the music track if shorter than the video.",
-)
-@click.option(
-    "--font",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to a TTF font file (default: bundled DejaVu Sans Mono).",
-)
+@_media_options
 @click.option(
     "--open/--no-open",
     "open_browser",
@@ -315,7 +344,18 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, fmt, turns, music, loop_music, font, open_browser, limit):
+def local_cmd(
+    output,
+    fmt,
+    turns,
+    music,
+    loop_music,
+    font,
+    chrome,
+    color_scheme,
+    open_browser,
+    limit,
+):
     """Select a local Claude Code session and generate a GIF."""
     from datetime import datetime
 
@@ -371,6 +411,8 @@ def local_cmd(output, fmt, turns, music, loop_music, font, open_browser, limit):
         music=music,
         loop_music=loop_music,
         font=font,
+        chrome=chrome,
+        color_scheme=color_scheme,
     )
 
     if should_open:
@@ -385,44 +427,25 @@ def local_cmd(output, fmt, turns, music, loop_music, font, open_browser, limit):
     type=click.Path(),
     help="Output file path. Defaults to <input-stem>.<format>.",
 )
-@click.option(
-    "--format",
-    "fmt",
-    type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
-    default="gif",
-    help="Output format (default: gif). mp4/avif require ffmpeg.",
-)
-@click.option(
-    "--turns",
-    type=str,
-    default=None,
-    help="Turn selection: N for first N turns, M,N for turns M through N.",
-)
-@click.option(
-    "--music",
-    type=click.Path(exists=True),
-    default=None,
-    help="Music track to mix into video (mp4 only).",
-)
-@click.option(
-    "--loop-music",
-    is_flag=True,
-    default=False,
-    help="Loop the music track if shorter than the video.",
-)
-@click.option(
-    "--font",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to a TTF font file (default: bundled DejaVu Sans Mono).",
-)
+@_media_options
 @click.option(
     "--open/--no-open",
     "open_browser",
     default=False,
     help="Open the generated file in your default viewer.",
 )
-def json_cmd(json_file, output, fmt, turns, music, loop_music, font, open_browser):
+def json_cmd(
+    json_file,
+    output,
+    fmt,
+    turns,
+    music,
+    loop_music,
+    font,
+    chrome,
+    color_scheme,
+    open_browser,
+):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
     # Handle URL input
     if is_url(json_file):
@@ -446,6 +469,8 @@ def json_cmd(json_file, output, fmt, turns, music, loop_music, font, open_browse
         music=music,
         loop_music=loop_music,
         font=font,
+        chrome=chrome,
+        color_scheme=color_scheme,
     )
 
     if open_browser:

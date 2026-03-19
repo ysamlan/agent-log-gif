@@ -56,12 +56,18 @@ src/agent_log_gif/
 │   ├── gif.py       # GIF assembly + gifsicle optimization
 │   ├── video.py     # MP4/AVIF via ffmpeg
 │   └── audio.py     # Music mixing via ffmpeg
-└── fonts/           # Bundled DejaVu Sans Mono + JetBrains Mono
+└── fonts/           # Bundled DejaVu Sans Mono
 ```
 
 ## Dependencies
 
-- **Runtime:** click, Pillow (MIT), httpx, questionary, click-default-group
-- **Optional system:** ffmpeg (MP4/AVIF/audio), gifsicle (GIF optimization)
-- **Bundled fonts:** DejaVu Sans Mono (Bitstream Vera license), JetBrains Mono (OFL-1.1)
-- **Dev:** pytest, pytest-httpx, ruff
+Python dependencies are in `pyproject.toml`. Optional system tools: ffmpeg (MP4/AVIF/audio), gifsicle (GIF optimization).
+
+### Bundled assets
+
+| Asset | License | File |
+|-------|---------|------|
+| DejaVu Sans Mono font | Bitstream Vera | `fonts/DejaVuSansMono-LICENSE.txt` |
+| 484 color schemes ([iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes)) | MIT | `color_schemes_LICENSE.txt` |
+
+Run `just licenses` to regenerate the Python dependency license audit.

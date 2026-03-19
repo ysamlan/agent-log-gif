@@ -1,4 +1,4 @@
-"""Smoke test: Pillow can load the bundled JetBrains Mono font."""
+"""Smoke test: Pillow can load the bundled DejaVu Sans Mono font."""
 
 from pathlib import Path
 
