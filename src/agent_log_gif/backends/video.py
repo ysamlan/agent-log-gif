@@ -6,21 +6,12 @@ by piping raw RGB frames to ffmpeg.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
 from PIL import Image
 
-
-def _check_ffmpeg():
-    """Raise if ffmpeg is not available."""
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError(
-            "ffmpeg is required for video output but was not found on PATH.\n"
-            "Install it with: apt install ffmpeg (Linux), brew install ffmpeg (macOS),\n"
-            "or download from https://ffmpeg.org/download.html"
-        )
+from agent_log_gif.backends import check_ffmpeg
 
 
 def _frames_to_fixed_fps(
@@ -39,25 +30,27 @@ def _frames_to_fixed_fps(
     return result
 
 
-def save_mp4(
+def _encode_video(
     frames: list[tuple[Image.Image, int]],
     output_path: str | Path,
-    fps: int = 15,
+    fps: int,
+    codec_args: list[str],
 ) -> Path:
-    """Save frames as an MP4 video via ffmpeg.
+    """Shared encoding pipeline for video backends.
 
     Args:
         frames: List of (PIL.Image, duration_ms) tuples.
-        output_path: Path to write the .mp4 file.
+        output_path: Path to write the output file.
         fps: Target frames per second.
+        codec_args: Codec-specific ffmpeg flags (e.g. libx264 or libaom-av1).
 
     Returns:
-        Path to the written MP4 file.
+        Path to the written video file.
     """
     if not frames:
         raise ValueError("Cannot create video from empty frame list")
 
-    _check_ffmpeg()
+    check_ffmpeg()
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,16 +71,7 @@ def save_mp4(
         str(fps),
         "-i",
         "pipe:0",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-preset",
-        "medium",
-        "-crf",
-        "23",
-        "-movflags",
-        "+faststart",
+        *codec_args,
         str(output_path),
     ]
 
@@ -103,6 +87,36 @@ def save_mp4(
         raise RuntimeError(f"ffmpeg failed:\n{stderr.decode()}")
 
     return output_path
+
+
+def save_mp4(
+    frames: list[tuple[Image.Image, int]],
+    output_path: str | Path,
+    fps: int = 15,
+) -> Path:
+    """Save frames as an MP4 video via ffmpeg.
+
+    Args:
+        frames: List of (PIL.Image, duration_ms) tuples.
+        output_path: Path to write the .mp4 file.
+        fps: Target frames per second.
+
+    Returns:
+        Path to the written MP4 file.
+    """
+    codec_args = [
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-movflags",
+        "+faststart",
+    ]
+    return _encode_video(frames, output_path, fps, codec_args)
 
 
 def save_avif(
@@ -120,30 +134,7 @@ def save_avif(
     Returns:
         Path to the written AVIF file.
     """
-    if not frames:
-        raise ValueError("Cannot create video from empty frame list")
-
-    _check_ffmpeg()
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    fixed_frames = _frames_to_fixed_fps(frames, fps)
-    width, height = fixed_frames[0].size
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(fps),
-        "-i",
-        "pipe:0",
+    codec_args = [
         "-c:v",
         "libaom-av1",
         "-crf",
@@ -152,18 +143,5 @@ def save_avif(
         "0",
         "-pix_fmt",
         "yuv420p",
-        str(output_path),
     ]
-
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    for img in fixed_frames:
-        proc.stdin.write(img.tobytes())
-
-    proc.stdin.close()
-    _, stderr = proc.communicate()
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed:\n{stderr.decode()}")
-
-    return output_path
+    return _encode_video(frames, output_path, fps, codec_args)

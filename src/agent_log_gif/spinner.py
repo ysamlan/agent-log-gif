@@ -8,9 +8,6 @@ in Claude's brand orange color. The verb text shares the same color.
 # Star/asterisk spinner frames (6 frames, cycle at ~80ms each)
 SPINNER_FRAMES = ["·", "✢", "✳", "∗", "✻", "✽"]
 
-# Interval between spinner frames in milliseconds
-SPINNER_INTERVAL_MS = 80
-
 # Spinner color — Claude's warm orange/terracotta (brand color)
 SPINNER_COLOR = "#da7756"
 

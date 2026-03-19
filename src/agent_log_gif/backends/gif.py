@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import click
 from PIL import Image
 
 
@@ -85,7 +86,7 @@ def _optimize_with_gifsicle(gif_path: Path) -> None:
         if optimized_size < original_size:
             optimized_path.replace(gif_path)
             reduction = (1 - optimized_size / original_size) * 100
-            print(
+            click.echo(
                 f"gifsicle: {original_size:,} → {optimized_size:,} bytes "
                 f"({reduction:.0f}% smaller)"
             )

@@ -79,6 +79,64 @@ class TerminalRenderer:
         self._ss_titlebar_h = TITLEBAR_HEIGHT * ss
         self._ss_content_y = self._ss_titlebar_h
 
+        # Pre-render title bar template (background + rounded corners +
+        # traffic lights + title text) so render_frame only draws content.
+        self._titlebar_template = self._build_titlebar_template()
+
+    def _build_titlebar_template(self) -> Image.Image:
+        """Pre-render the full background + title bar as a reusable template.
+
+        This image has the correct background color everywhere and the title
+        bar (rounded corners, traffic lights, title text) already drawn.
+        Copying it is much cheaper than re-drawing 9+ primitives per frame.
+        """
+        ss = self._SSAA
+        bg = self.theme.hex_to_rgb(self.theme.background)
+        titlebar_bg = self.theme.hex_to_rgb(TITLEBAR_COLOR)
+
+        img = Image.new("RGB", (self._ss_width, self._ss_height), bg)
+        draw = ImageDraw.Draw(img)
+
+        # Title bar background
+        draw.rectangle(
+            [0, 0, self._ss_width, self._ss_titlebar_h],
+            fill=titlebar_bg,
+        )
+
+        # Rounded top corners
+        _draw_rounded_top(
+            draw,
+            self._ss_width,
+            self._ss_titlebar_h,
+            titlebar_bg,
+            bg,
+            corner_radius=CORNER_RADIUS * ss,
+        )
+
+        # Traffic light dots
+        for i, color in enumerate(TRAFFIC_LIGHT_COLORS):
+            cx = TRAFFIC_LIGHT_X_START * ss + i * TRAFFIC_LIGHT_SPACING * ss
+            cy = TRAFFIC_LIGHT_Y * ss
+            r = TRAFFIC_LIGHT_RADIUS * ss
+            rgb = self.theme.hex_to_rgb(color)
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb)
+
+        # Title text (centered)
+        if self.title:
+            title_color = self.theme.hex_to_rgb(self.theme.comment)
+            title_bbox = self._title_font_ss.getbbox(self.title)
+            title_width = title_bbox[2] - title_bbox[0]
+            title_x = (self._ss_width - title_width) // 2
+            title_y = (self._ss_titlebar_h - (title_bbox[3] - title_bbox[1])) // 2
+            draw.text(
+                (title_x, title_y),
+                self.title,
+                fill=title_color,
+                font=self._title_font_ss,
+            )
+
+        return img
+
     def render_frame(
         self,
         lines: list[StyledLine],
@@ -96,51 +154,9 @@ class TerminalRenderer:
         Returns:
             A PIL Image of the terminal frame.
         """
-        ss = self._SSAA
-        bg = self.theme.hex_to_rgb(self.theme.background)
-        titlebar_bg = self.theme.hex_to_rgb(TITLEBAR_COLOR)
-
-        # Render at 2x resolution for antialiased text
-        img = Image.new("RGB", (self._ss_width, self._ss_height), bg)
+        # Start from the pre-rendered background + title bar template
+        img = self._titlebar_template.copy()
         draw = ImageDraw.Draw(img)
-
-        # Draw title bar background
-        draw.rectangle(
-            [0, 0, self._ss_width, self._ss_titlebar_h],
-            fill=titlebar_bg,
-        )
-
-        # Draw rounded top corners
-        _draw_rounded_top(
-            draw,
-            self._ss_width,
-            self._ss_titlebar_h,
-            titlebar_bg,
-            bg,
-            corner_radius=CORNER_RADIUS * ss,
-        )
-
-        # Draw traffic light dots
-        for i, color in enumerate(TRAFFIC_LIGHT_COLORS):
-            cx = TRAFFIC_LIGHT_X_START * ss + i * TRAFFIC_LIGHT_SPACING * ss
-            cy = TRAFFIC_LIGHT_Y * ss
-            r = TRAFFIC_LIGHT_RADIUS * ss
-            rgb = self.theme.hex_to_rgb(color)
-            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgb)
-
-        # Draw title text (centered)
-        if self.title:
-            title_color = self.theme.hex_to_rgb(self.theme.comment)
-            title_bbox = self._title_font_ss.getbbox(self.title)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_x = (self._ss_width - title_width) // 2
-            title_y = (self._ss_titlebar_h - (title_bbox[3] - title_bbox[1])) // 2
-            draw.text(
-                (title_x, title_y),
-                self.title,
-                fill=title_color,
-                font=self._title_font_ss,
-            )
 
         # Draw terminal content — bottom-aligned like real terminal UIs
         visible_lines = lines[-self.theme.rows :]

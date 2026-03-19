@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,7 +69,9 @@ class TerminalTheme:
     padding: int = 28
     padding_bottom: int = 36  # extra space at bottom for the prompt line
 
-    def hex_to_rgb(self, hex_color: str) -> tuple[int, int, int]:
+    @staticmethod
+    @functools.lru_cache(maxsize=32)
+    def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
         """Convert hex color string to RGB tuple."""
         hex_color = hex_color.lstrip("#")
         return (

@@ -5,9 +5,10 @@ Attaches a music track to an MP4 video with optional looping and fade-out.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
+
+from agent_log_gif.backends import check_ffmpeg
 
 
 def mix_audio(
@@ -30,8 +31,7 @@ def mix_audio(
     Returns:
         Path to the output video with audio.
     """
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError("ffmpeg is required for audio mixing but was not found.")
+    check_ffmpeg()
 
     video_path = Path(video_path)
     music_path = Path(music_path)

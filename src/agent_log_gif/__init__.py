@@ -85,7 +85,7 @@ def _session_to_media(
     from agent_log_gif.animator import generate_frames
     from agent_log_gif.backends.gif import save_gif
     from agent_log_gif.theme import TerminalTheme
-    from agent_log_gif.timeline import loglines_to_timeline, visible_events
+    from agent_log_gif.timeline import EventType, loglines_to_timeline, visible_events
 
     # Validate format + audio combination
     if music and fmt != "mp4":
@@ -105,7 +105,7 @@ def _session_to_media(
     turn_groups = []
     current_turn = []
     for event in events:
-        if event.type.value == "user_message" and current_turn:
+        if event.type == EventType.USER_MESSAGE and current_turn:
             turn_groups.append(current_turn)
             current_turn = []
         current_turn.append(event)
@@ -135,12 +135,13 @@ def _session_to_media(
     click.echo(
         f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
     )
-    theme = TerminalTheme()
+    theme_kwargs = {}
     if font:
         font_path = Path(font)
         if not font_path.exists():
             raise click.ClickException(f"Font file not found: {font}")
-        theme = TerminalTheme(font_path=str(font_path))
+        theme_kwargs["font_path"] = str(font_path)
+    theme = TerminalTheme(**theme_kwargs)
 
     transcript_source = data.get("transcript_source", "claude")
     frames = generate_frames(
