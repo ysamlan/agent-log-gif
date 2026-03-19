@@ -102,6 +102,8 @@ def _session_to_media(
         except ValueError as e:
             raise click.ClickException(str(e))
 
+    _check_optional_tools(fmt)
+
     click.echo(f"Parsing {session_path}...")
     data = parse_session_file(session_path)
     loglines = data.get("loglines", [])
@@ -286,11 +288,51 @@ def resolve_credentials(token, org_uuid):
     return token, org_uuid
 
 
+def _check_optional_tools(fmt: str) -> None:
+    """Warn or error about missing optional tools based on output format.
+
+    GIF: warn if gifsicle is missing (output works, just larger).
+    MP4/AVIF: error if ffmpeg is missing (cannot proceed).
+    """
+    import shutil
+
+    if fmt in ("mp4", "avif") and not shutil.which("ffmpeg"):
+        raise click.ClickException(
+            "ffmpeg is required for video output but was not found on PATH.\n"
+            "Install it: apt install ffmpeg (Linux), brew install ffmpeg (macOS),\n"
+            "or download from https://ffmpeg.org/download.html"
+        )
+
+    if fmt == "gif" and not shutil.which("gifsicle"):
+        click.echo(
+            "Tip: install gifsicle for 80-85% smaller GIFs. "
+            "See https://www.lcdf.org/gifsicle/",
+            err=True,
+        )
+
+
+def _tool_status() -> str:
+    """Return a short status line showing which optional tools are available."""
+    import shutil
+
+    gifsicle = "installed" if shutil.which("gifsicle") else "not found"
+    ffmpeg = "installed" if shutil.which("ffmpeg") else "not found"
+    return f"  gifsicle: {gifsicle}  |  ffmpeg: {ffmpeg}"
+
+
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="agent-log-gif")
 def cli():
-    """Convert Claude Code or Codex session logs to animated GIFs."""
+    """Convert Claude Code or Codex session logs to animated GIFs.
+
+    \b
+    Optional tools:
+    """
     pass
+
+
+# Append tool status to help text at import time
+cli.help = cli.help.rstrip() + "\n" + _tool_status()
 
 
 def _media_options(fn):
@@ -443,6 +485,50 @@ def local_cmd(
     if selected is None:
         click.echo("No session selected.")
         return
+
+    # Interactive prompts for options not provided via CLI flags
+    if fmt == "gif" and not output:
+        fmt = questionary.select(
+            "Output format:",
+            choices=[
+                questionary.Choice("GIF (default)", value="gif"),
+                questionary.Choice("MP4 (requires ffmpeg)", value="mp4"),
+                questionary.Choice("AVIF (requires ffmpeg)", value="avif"),
+            ],
+            default="GIF (default)",
+        ).ask()
+        if fmt is None:
+            return
+
+    if chrome == "mac":
+        chrome = questionary.select(
+            "Window chrome:",
+            choices=[
+                questionary.Choice("macOS (default)", value="mac"),
+                questionary.Choice("macOS square corners", value="mac-square"),
+                questionary.Choice("Windows 11", value="windows"),
+                questionary.Choice("Linux / GNOME", value="linux"),
+                questionary.Choice("None", value="none"),
+            ],
+            default="macOS (default)",
+        ).ask()
+        if chrome is None:
+            return
+
+    if show is None:
+        show = questionary.select(
+            "Content to show:",
+            choices=[
+                questionary.Choice("Conversation only (default)", value=""),
+                questionary.Choice("+ Tool call names", value="calls"),
+                questionary.Choice("+ Tool calls and results", value="tools"),
+                questionary.Choice("Everything (tools + thinking)", value="all"),
+            ],
+            default="Conversation only (default)",
+        ).ask()
+        if show is None:
+            return
+        show = show or None  # convert empty string back to None
 
     # Determine output path
     if output is None:
