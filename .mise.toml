@@ -2,5 +2,8 @@
 bun = "latest"
 node = "24"
 
-[settings]
-python.uv_venv_auto = "source"
+# Activate the correct venv for the environment.
+# In devcontainer: UV_PROJECT_ENVIRONMENT=/workspace/.venv_devcontainer
+# On host: defaults to .venv
+[env]
+_.python.venv = "{{env.UV_PROJECT_ENVIRONMENT | default(value='.venv')}}"
