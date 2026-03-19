@@ -142,7 +142,10 @@ def _session_to_media(
             raise click.ClickException(f"Font file not found: {font}")
         theme = TerminalTheme(font_path=str(font_path))
 
-    frames = generate_frames(selected_events, theme=theme)
+    transcript_source = data.get("transcript_source", "claude")
+    frames = generate_frames(
+        selected_events, theme=theme, transcript_source=transcript_source
+    )
 
     if not frames:
         raise click.ClickException("No frames generated.")

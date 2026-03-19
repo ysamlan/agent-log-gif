@@ -11,8 +11,8 @@ import textwrap
 
 from PIL import Image
 
-from agent_log_gif.renderer import StyledLine, TerminalRenderer
-from agent_log_gif.spinner import RAINBOW_COLORS, SPINNER_FRAMES, SPINNER_VERBS
+from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
+from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, SPINNER_VERBS
 from agent_log_gif.theme import TerminalTheme
 from agent_log_gif.timeline import EventType, ReplayEvent
 
@@ -23,7 +23,7 @@ ASSISTANT_CHARS_PER_FRAME = 10
 # Frame durations in milliseconds
 USER_FRAME_MS = 80
 ASSISTANT_FRAME_MS = 50
-SPINNER_FRAME_MS = 80
+SPINNER_FRAME_MS = 140
 PAUSE_MS = 300  # pause between turns
 
 # Number of spinner cycles to show
@@ -64,6 +64,7 @@ def generate_frames(
     events: list[ReplayEvent],
     theme: TerminalTheme | None = None,
     renderer: TerminalRenderer | None = None,
+    transcript_source: str = "claude",
 ) -> list[tuple[Image.Image, int]]:
     """Convert replay events into animated frames.
 
@@ -85,36 +86,44 @@ def generate_frames(
     # Persistent text buffer (list of styled lines) that grows over time
     buffer: list[StyledLine] = []
 
+    # The prompt area: a blank separator line + the ❯ prompt, always at the bottom.
+    # This keeps a fixed gap between the scrolling content and the input area.
+    prompt_line: StyledLine = [(f"{PROMPT_CHAR} ", theme.prompt_color)]
+    prompt_area: list[StyledLine] = [[], prompt_line]
+
+    def _snap(lines: list[StyledLine], duration: int) -> tuple[Image.Image, int]:
+        """Render a frame with the prompt area (gap + ❯) at the bottom."""
+        return (renderer.render_frame(lines + prompt_area), duration)
+
     # Track turns for separator placement
     last_event_type = None
 
     for event in events:
         if event.type == EventType.USER_MESSAGE:
-            # Add separator if this isn't the first turn
+            # Add separator + blank line between turns
             if last_event_type is not None:
+                buffer.append([])  # breathing room after previous message
                 separator_width = min(theme.cols - 4, 40)
                 buffer.append(
                     [(SEPARATOR_CHAR * separator_width, theme.separator_color)]
                 )
-                buffer.append([])  # blank line
-                frames.append((renderer.render_frame(buffer), PAUSE_MS))
+                buffer.append([])  # blank line after separator
+                frames.append(_snap(buffer, PAUSE_MS))
 
-            # Type user message with ❯ prefix
-            _animate_typing(
+            # User types directly on the bottom prompt line
+            _animate_user_typing(
                 buffer=buffer,
                 frames=frames,
                 renderer=renderer,
                 text=event.text,
-                prefix_char=PROMPT_CHAR,
-                prefix_color=theme.prompt_color,
-                text_color=theme.foreground,
-                chars_per_frame=USER_CHARS_PER_FRAME,
-                frame_ms=USER_FRAME_MS,
-                cols=theme.cols,
+                theme=theme,
             )
 
+            # Blank line after user message before spinner/response
+            buffer.append([])
+
             # Pause after user message
-            frames.append((renderer.render_frame(buffer), PAUSE_MS))
+            frames.append(_snap(buffer, PAUSE_MS))
 
             # Spinner animation
             _animate_spinner(
@@ -122,6 +131,8 @@ def generate_frames(
                 frames=frames,
                 renderer=renderer,
                 theme=theme,
+                prompt_area=prompt_area,
+                transcript_source=transcript_source,
             )
 
             last_event_type = event.type
@@ -139,10 +150,11 @@ def generate_frames(
                 chars_per_frame=ASSISTANT_CHARS_PER_FRAME,
                 frame_ms=ASSISTANT_FRAME_MS,
                 cols=theme.cols,
+                prompt_area=prompt_area,
             )
 
             # Brief pause after assistant
-            frames.append((renderer.render_frame(buffer), PAUSE_MS))
+            frames.append(_snap(buffer, PAUSE_MS))
             last_event_type = event.type
 
     # Hold final frame a bit longer
@@ -151,6 +163,72 @@ def generate_frames(
         frames[-1] = (last_img, 2000)
 
     return frames
+
+
+def _animate_user_typing(
+    *,
+    buffer: list[StyledLine],
+    frames: list[tuple[Image.Image, int]],
+    renderer: TerminalRenderer,
+    text: str,
+    theme: TerminalTheme,
+) -> None:
+    """Animate user typing on the bottom prompt line, then 'send' it to the buffer.
+
+    The user types directly on the ❯ line at the bottom. The input area
+    grows (wraps to additional lines) as text exceeds the terminal width,
+    pushing the content above upward. When typing completes, the text
+    moves up into the buffer and the input area shrinks back to one line.
+    """
+    prefix = f"{PROMPT_CHAR} "
+    prefix_len = len(prefix)
+    max_first_line = theme.cols - prefix_len
+    max_cont_line = theme.cols - 2  # continuation indent
+
+    # Progressive typing — input area grows as text wraps
+    chars_typed = 0
+    while chars_typed < len(text):
+        chars_typed = min(chars_typed + USER_CHARS_PER_FRAME, len(text))
+        visible = text[:chars_typed]
+
+        # Wrap the visible text into input area lines (all highlighted)
+        input_lines: list[StyledLine] = []
+        remaining = visible
+        first = True
+        while remaining:
+            if first:
+                chunk = remaining[:max_first_line]
+                remaining = remaining[max_first_line:]
+                input_lines.append(
+                    [
+                        (prefix, theme.prompt_color),
+                        (chunk, theme.foreground),
+                        HIGHLIGHT_MARKER,
+                    ]
+                )
+                first = False
+            else:
+                chunk = remaining[:max_cont_line]
+                remaining = remaining[max_cont_line:]
+                input_lines.append([("  " + chunk, theme.foreground), HIGHLIGHT_MARKER])
+
+        # Content above + growing input area at bottom (no gap — it IS the input)
+        snapshot = buffer + input_lines
+        frames.append((renderer.render_frame(snapshot), USER_FRAME_MS))
+
+    # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
+    wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
+    for i, line_text in enumerate(wrapped_lines):
+        if i == 0:
+            buffer.append(
+                [
+                    (prefix, theme.prompt_color),
+                    (line_text, theme.foreground),
+                    HIGHLIGHT_MARKER,
+                ]
+            )
+        else:
+            buffer.append([("  " + line_text, theme.foreground), HIGHLIGHT_MARKER])
 
 
 def _animate_typing(
@@ -165,6 +243,7 @@ def _animate_typing(
     chars_per_frame: int,
     frame_ms: int,
     cols: int,
+    prompt_area: list[StyledLine],
 ) -> None:
     """Add typing animation frames for a message."""
     prefix = f"{prefix_char} "
@@ -209,8 +288,8 @@ def _animate_typing(
             else:
                 partial_lines.append([("  " + visible_text, text_color)])
 
-        # Render with partial content appended to buffer
-        snapshot = buffer + partial_lines
+        # Render with partial content appended to buffer + prompt line at bottom
+        snapshot = buffer + partial_lines + prompt_area
         frames.append((renderer.render_frame(snapshot), frame_ms))
 
     # Commit full lines to buffer
@@ -223,23 +302,43 @@ def _animate_spinner(
     frames: list[tuple[Image.Image, int]],
     renderer: TerminalRenderer,
     theme: TerminalTheme,
+    prompt_area: list[StyledLine],
+    transcript_source: str = "claude",
 ) -> None:
-    """Add spinner animation frames between user and assistant messages."""
-    verb = random.choice(SPINNER_VERBS)
-    total_frames = len(SPINNER_FRAMES) * SPINNER_CYCLES
+    """Add spinner animation frames between user and assistant messages.
 
-    for i in range(total_frames):
-        frame_char = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
-        color = RAINBOW_COLORS[i % len(RAINBOW_COLORS)]
+    Claude Code: star character cycles through 6 glyphs in brand orange,
+    with a random whimsical verb.
+    Codex: static bullet with "Working…" and elapsed time, no animation.
+    """
+    if transcript_source == "codex":
+        # Codex style: "• Working (Xs · esc to interrupt)" — static, no animation
+        total_frames = SPINNER_CYCLES * len(SPINNER_FRAMES)  # same duration
+        for i in range(total_frames):
+            elapsed = (i * SPINNER_FRAME_MS) // 1000
+            spinner_line: StyledLine = [
+                ("• ", theme.comment),
+                ("Working", theme.comment),
+                (f" ({elapsed}s · esc to interrupt)", theme.comment),
+            ]
+            snapshot = buffer + [spinner_line] + prompt_area
+            frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
+    else:
+        # Claude Code style: cycling star + random verb in brand orange
+        verb = random.choice(SPINNER_VERBS)
+        total_frames = len(SPINNER_FRAMES) * SPINNER_CYCLES
 
-        spinner_line: StyledLine = [
-            (f"{frame_char} ", color),
-            (f"{verb}...", color),
-        ]
+        for i in range(total_frames):
+            frame_char = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
 
-        # Temporarily append spinner line to buffer
-        snapshot = buffer + [spinner_line]
-        frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
+            spinner_line: StyledLine = [
+                (f"{frame_char} ", SPINNER_COLOR),
+                (f"{verb}…", SPINNER_COLOR),
+                (" (esc to interrupt)", theme.comment),
+            ]
+
+            snapshot = buffer + [spinner_line] + prompt_area
+            frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
 
     # Add a blank line after spinner (spinner line is not committed to buffer)
     buffer.append([])

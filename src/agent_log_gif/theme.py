@@ -7,8 +7,13 @@ from pathlib import Path
 
 
 def _default_font_path() -> str:
-    """Return path to the bundled JetBrains Mono Regular font."""
-    return str(Path(__file__).parent / "fonts" / "JetBrainsMono-Regular.ttf")
+    """Return path to the bundled DejaVu Sans Mono font.
+
+    DejaVu is the default because it has excellent Unicode coverage
+    (spinner stars, bullets, box-drawing characters). JetBrains Mono
+    can be used via --font if preferred, but lacks some glyphs.
+    """
+    return str(Path(__file__).parent / "fonts" / "DejaVuSansMono.ttf")
 
 
 # Dracula color palette (official spec)
@@ -48,7 +53,7 @@ class TerminalTheme:
     foreground: str = DRACULA["foreground"]
     comment: str = DRACULA["comment"]
     prompt_color: str = DRACULA["cyan"]  # ❯ color
-    assistant_color: str = DRACULA["green"]  # ● color
+    assistant_color: str = DRACULA["foreground"]  # ● color (green only for tool calls)
     separator_color: str = DRACULA["comment"]  # ─── color
 
     # Font
@@ -60,7 +65,8 @@ class TerminalTheme:
     rows: int = 30
 
     # Pixel padding around terminal content
-    padding: int = 20
+    padding: int = 28
+    padding_bottom: int = 36  # extra space at bottom for the prompt line
 
     def hex_to_rgb(self, hex_color: str) -> tuple[int, int, int]:
         """Convert hex color string to RGB tuple."""

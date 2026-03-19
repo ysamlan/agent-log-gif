@@ -1,24 +1,18 @@
 """Spinner animation frames and whimsical verb list.
 
-Data sourced from Claude Code's CLI (character values only, no code copied).
+Character sequence sourced from Claude Code's CLI (character values only,
+no code copied). The spinner cycles through six star/asterisk-like glyphs
+in Claude's brand orange color. The verb text shares the same color.
 """
 
-# Braille dot spinner frames (10 frames, 80ms each)
-SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+# Star/asterisk spinner frames (6 frames, cycle at ~80ms each)
+SPINNER_FRAMES = ["·", "✢", "✳", "∗", "✻", "✽"]
 
 # Interval between spinner frames in milliseconds
 SPINNER_INTERVAL_MS = 80
 
-# Rainbow colors for spinner text (cycle through these)
-RAINBOW_COLORS = [
-    "#EB5F57",  # red
-    "#F58B57",  # orange
-    "#FAC35F",  # yellow
-    "#91C882",  # green
-    "#82AADC",  # blue
-    "#9B82C8",  # indigo
-    "#C882B4",  # violet
-]
+# Spinner color — Claude's warm orange/terracotta (brand color)
+SPINNER_COLOR = "#da7756"
 
 # Whimsical verbs displayed alongside the spinner
 SPINNER_VERBS = [

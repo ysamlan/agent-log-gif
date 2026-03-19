@@ -8,3 +8,5 @@ dist/
 build/
 .ruff_cache/
 tmp/
+.claude/statusline-command.sh
+.vscode/settings.json

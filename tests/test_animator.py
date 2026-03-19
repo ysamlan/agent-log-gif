@@ -30,8 +30,8 @@ class TestGenerateFrames:
         frames = generate_frames(events)
 
         # Should have: user typing frames + pause + spinner frames + assistant typing + pause + hold
-        # At minimum: 1 user frame + 1 pause + 30 spinner frames + 1 assistant frame + pause + hold
-        assert len(frames) >= 30  # spinner alone is 30 frames (10 * 3 cycles)
+        # At minimum: 1 user frame + 1 pause + 18 spinner frames + 1 assistant frame + pause + hold
+        assert len(frames) >= 18  # spinner alone is 18 frames (6 * 3 cycles)
 
     def test_empty_events(self):
         """Empty event list produces no frames."""
@@ -85,6 +85,68 @@ class TestGenerateFrames:
         ]
         frames = generate_frames(events)
         assert len(frames) > 0
+
+    def test_long_user_input_wraps_during_typing(self):
+        """User input that exceeds terminal width wraps onto multiple lines while typing."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme(cols=40)  # narrow terminal to force wrapping
+        long_input = "This is a user message that is definitely longer than forty columns and should wrap"
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text=long_input),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="OK"),
+        ]
+        frames = generate_frames(events, theme=theme)
+
+        # All frames must be the same size (input area growing doesn't change image dims)
+        sizes = {img.size for img, _ in frames}
+        assert len(sizes) == 1, f"Frame sizes varied: {sizes}"
+
+        # Should have more typing frames than a short message would
+        short_events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="OK"),
+        ]
+        short_frames = generate_frames(short_events, theme=theme)
+        assert len(frames) > len(short_frames)
+
+    def test_long_user_input_produces_more_typing_frames(self):
+        """Longer user text produces proportionally more typing frames."""
+        short_text = "Hello"
+        long_text = "x" * 200  # well beyond 80 cols
+
+        short_frames = generate_frames(
+            [
+                ReplayEvent(type=EventType.USER_MESSAGE, text=short_text),
+            ]
+        )
+        long_frames = generate_frames(
+            [
+                ReplayEvent(type=EventType.USER_MESSAGE, text=long_text),
+            ]
+        )
+
+        # Long text should produce substantially more frames
+        assert len(long_frames) > len(short_frames) * 3
+
+    def test_codex_spinner_differs_from_claude(self):
+        """Codex sessions use the bullet Working spinner, not the star spinner."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+        ]
+        claude_frames = generate_frames(events, transcript_source="claude")
+        codex_frames = generate_frames(events, transcript_source="codex")
+
+        # Both produce frames
+        assert len(claude_frames) > 0
+        assert len(codex_frames) > 0
+        # Frame content should differ (different spinner style)
+        # Compare a spinner frame (around frame index after typing)
+        # They should have different pixel content due to different spinner chars/colors
+        claude_mid = claude_frames[len(claude_frames) // 3][0]
+        codex_mid = codex_frames[len(codex_frames) // 3][0]
+        assert claude_mid.tobytes() != codex_mid.tobytes()
 
     def test_all_frames_same_dimensions(self):
         """Every frame in the sequence has identical dimensions."""

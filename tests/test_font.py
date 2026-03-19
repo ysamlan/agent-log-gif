@@ -6,13 +6,13 @@ from PIL import ImageFont
 
 
 def test_bundled_font_loads():
-    """Verify the bundled JetBrains Mono TTF is loadable by Pillow."""
+    """Verify the bundled DejaVu Sans Mono TTF is loadable by Pillow."""
     font_path = (
         Path(__file__).parent.parent
         / "src"
         / "agent_log_gif"
         / "fonts"
-        / "JetBrainsMono-Regular.ttf"
+        / "DejaVuSansMono.ttf"
     )
     assert font_path.exists(), f"Font file not found at {font_path}"
 
@@ -32,7 +32,7 @@ def test_font_is_monospace():
         / "src"
         / "agent_log_gif"
         / "fonts"
-        / "JetBrainsMono-Regular.ttf"
+        / "DejaVuSansMono.ttf"
     )
     font = ImageFont.truetype(str(font_path), size=16)
 
@@ -42,3 +42,23 @@ def test_font_is_monospace():
         widths.add(round(w, 2))
 
     assert len(widths) == 1, f"Font is not monospace: widths={widths}"
+
+
+def test_font_renders_special_characters():
+    """Verify the font renders spinner stars, bullets, and box drawing."""
+    font_path = (
+        Path(__file__).parent.parent
+        / "src"
+        / "agent_log_gif"
+        / "fonts"
+        / "DejaVuSansMono.ttf"
+    )
+    font = ImageFont.truetype(str(font_path), size=16)
+
+    # These all need real glyphs (not tofu)
+    special_chars = "✢✳∗✻✽●❯─"
+    for ch in special_chars:
+        bbox = font.getbbox(ch)
+        assert bbox is not None, f"No bbox for {ch} U+{ord(ch):04X}"
+        # Width should be non-zero (not a .notdef glyph)
+        assert bbox[2] > 0, f"Zero-width glyph for {ch} U+{ord(ch):04X}"
