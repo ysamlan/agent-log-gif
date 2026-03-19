@@ -18,13 +18,13 @@ Turn your Claude Code and Codex sessions into animated terminal replays. Share t
 ## Quick start
 
 ```bash
-uvx agent-log-gif json session.jsonl -o demo.gif
+uvx agent-log-gif
 ```
 
-Or pick from your recent local sessions interactively:
+Or pick a specific session from disk:
 
 ```bash
-agent-log-gif
+uvx agent-log-gif json ~/.claude/projects/<project>/<session>.jsonl
 ```
 
 To install permanently:
@@ -35,36 +35,9 @@ uv tool install agent-log-gif
 
 ## Optional tools
 
-GIF output works out of the box. For better compression and video output, install these:
+GIF output works out of the box. For better compression and video output, install these using your system package manager of choice:
 
-| Tool | What it does | Recommended? |
-|------|-------------|--------------|
-| [gifsicle](https://www.lcdf.org/gifsicle/) | Compresses GIFs 80-85% smaller | Yes |
-| [ffmpeg](https://ffmpeg.org/) | Enables MP4 and AVIF output, music tracks | For video |
-
-<details>
-<summary>Installation instructions</summary>
-
-**macOS:**
-```bash
-brew install gifsicle ffmpeg
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt install gifsicle ffmpeg
-```
-
-**Windows:**
-```bash
-choco install gifsicle ffmpeg
-```
-
-**Or download directly:**
-- gifsicle: https://www.lcdf.org/gifsicle/
-- ffmpeg: https://ffmpeg.org/download.html
-
-</details>
+Install [gifsicle](https://www.lcdf.org/gifsicle/) for 80% better compression of GIFs, and [ffmpeg](https://ffmpeg.org/) for MP4/AVIF output. Using your package manager of choice (`brew install gifsicle ffmpeg`, `choco install gifsicle ffmpeg`,  `apt install gifsicle ffmpeg` etc.)
 
 ## Usage
 
@@ -72,21 +45,22 @@ choco install gifsicle ffmpeg
 
 ```bash
 # GIF (default)
-agent-log-gif json session.jsonl -o demo.gif
-
-# MP4 (smaller files, requires ffmpeg)
-agent-log-gif json session.jsonl -o demo.mp4 --format mp4
+agent-log-gif json session.jsonl
 
 # Animated AVIF (requires ffmpeg)
-agent-log-gif json session.jsonl -o demo.avif --format avif
+agent-log-gif json session.jsonl --format avif
+
+# MP4 with background music (requires ffmpeg)
+agent-log-gif json session.jsonl --format mp4 --music track.mp3 --loop-music
+
+# Specify output file
+agent-log-gif local -o out.gif
 ```
 
 ### Pick from local sessions
 
 ```bash
 agent-log-gif                  # interactive picker, opens result
-agent-log-gif local --limit 20 # show more sessions
-agent-log-gif local -o out.gif # save to specific file
 ```
 
 ### Turn selection
@@ -136,14 +110,15 @@ agent-log-gif json session.jsonl --font /path/to/MyFont.ttf
 ### Supported session formats
 
 - Claude Code JSONL files (`~/.claude/projects/`)
-- Claude Code JSON session files
 - Codex JSONL session files (`~/.codex/sessions/`)
 - URLs to any of the above
 
 ### Web sessions
 
 > [!WARNING]
-> The `web` command relies on unofficial, undocumented APIs and may not work reliably.
+> The `web` commands are broken right now due to changes to the unofficial and undocumented APIs that these commands were using. 
+> See [this issue](https://github.com/simonw/claude-code-transcripts/issues/77) in simonw/claude-code-transcripts for details.
+> 
 
 ```bash
 agent-log-gif web                       # interactive session picker
@@ -156,40 +131,35 @@ On macOS, credentials are auto-detected from your keychain. On other platforms, 
 ## All options
 
 ```
-agent-log-gif json [OPTIONS] FILE
+agent-log-gif json [OPTIONS] [FILE]
 
-  -o, --output PATH        Output file path (default: <input>.<format>)
-  --format [gif|mp4|avif]  Output format (default: gif)
-  --turns TEXT             N for first N turns, M,N for range
-  --music PATH             Music track for MP4
-  --loop-music             Loop music if shorter than video
-  --chrome STYLE           Window chrome: none|mac|mac-square|windows|linux
-  --color-scheme NAME      Terminal color scheme (e.g. Dracula, Nord)
-  --font PATH              Custom TTF font file
-  --cols INT               Terminal width in columns (default: 80)
-  --rows INT               Terminal height in rows (default: 30)
-  --font-size INT          Font size in pixels (default: 16)
-  --show TYPES             Extra content: tools, calls, thinking, all
-  --open / --no-open       Open result in default viewer
+  -o, --output PATH            Output file path (default: <input>.<format>)
+  --list [claude|codex]        List recent sessions instead of converting
+  --format [gif|mp4|avif]      Output format (default: gif)
+  --turns TEXT                 N for first N turns, M,N for range
+  --music PATH                 Music track for MP4
+  --loop-music                 Loop music if shorter than video
+  --chrome STYLE               Window chrome: none|mac|mac-square|windows|linux
+  --color-scheme NAME          Terminal color scheme (e.g. Dracula, Nord)
+  --font PATH                  Custom TTF font file
+  --cols INT                   Terminal width in columns (default: 80)
+  --rows INT                   Terminal height in rows (default: 30)
+  --font-size INT              Font size in pixels (default: 16)
+  --show TYPES                 Extra content: tools, calls, thinking, all
+  --open / --no-open           Open result in default viewer
+
+agent-log-gif search KEYWORD [--source claude|codex]
 ```
 
 ## Claude Code skill
 
-agent-log-gif includes a skill that lets Claude find your sessions and generate animations for you conversationally.
-
-**Install via [skills.sh](https://github.com/vercel-labs/skills):**
+agent-log-gif includes an [agent-log-gif Skill](https://github.com/ysamlan/agent-log-gif/tree/main/skills/agent-log-gif/) that lets Claude Code / Codex find your sessions and generate animations for you conversationally. Copy the skills/agent-log-gif  folder it into `~/.claude/skills/`, or install automatically via [skills.sh](https://github.com/vercel-labs/skills):
 
 ```bash
 npx skills add ysamlan/agent-log-gif
 ```
 
-**Or copy manually** into your project's `.claude/skills/` directory:
-
-```bash
-cp -r skills/agent-log-gif .claude/skills/
-```
-
-Then ask Claude things like "make a gif of my last coding session" or "find the session where I worked on auth and animate it."
+Then ask Claude things like "make a gif of my last coding session" or "find the session where I worked on auth and make an mp4 showing tool calls."
 
 ## Credits
 
@@ -199,9 +169,3 @@ Color schemes from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Co
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
-
-Quick start:
-
-```bash
-uv sync && just test
-```
