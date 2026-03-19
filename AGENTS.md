@@ -1,21 +1,15 @@
-Uses uv. Run tests like this:
+Uses uv. Run tests:
 
     just test
 
-Or directly:
+Run the tool:
 
-    uv run pytest
+    uv run agent-log-gif json tests/sample_session.jsonl -o /tmp/test.gif
 
-Run the development version of the tool like this:
-
-    uv run agent-log-gif --help
-
-Always practice TDD: write a failing test, watch it fail, then make it pass.
-
-Commit early and often. Commits should bundle the test, implementation, and documentation changes together.
-
-Run linting and formatting before you commit (also runs automatically via git hook):
+Lint and format (also runs via git hook):
 
     just lint
 
-For all available commands: `just --list`
+All commands: `just --list`
+
+Practice TDD: failing test first, then implementation. Bundle test + code + docs in one commit.

@@ -299,6 +299,12 @@ def cli():
     help="Loop the music track if shorter than the video.",
 )
 @click.option(
+    "--font",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to a TTF font file (default: bundled DejaVu Sans Mono).",
+)
+@click.option(
     "--open/--no-open",
     "open_browser",
     default=None,
@@ -309,7 +315,7 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, fmt, turns, music, loop_music, open_browser, limit):
+def local_cmd(output, fmt, turns, music, loop_music, font, open_browser, limit):
     """Select a local Claude Code session and generate a GIF."""
     from datetime import datetime
 
@@ -364,6 +370,7 @@ def local_cmd(output, fmt, turns, music, loop_music, open_browser, limit):
         fmt=fmt,
         music=music,
         loop_music=loop_music,
+        font=font,
     )
 
     if should_open:
@@ -407,7 +414,7 @@ def local_cmd(output, fmt, turns, music, loop_music, open_browser, limit):
     "--font",
     type=click.Path(exists=True),
     default=None,
-    help="Path to a TTF font file (default: bundled JetBrains Mono).",
+    help="Path to a TTF font file (default: bundled DejaVu Sans Mono).",
 )
 @click.option(
     "--open/--no-open",
