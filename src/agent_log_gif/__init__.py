@@ -62,17 +62,34 @@ from agent_log_gif.web import (  # noqa: F401 - re-exported for backward compat
 DEFAULT_MAX_TURNS = 20
 
 
-def _session_to_gif(session_path, output_path, turns=None):
-    """Core pipeline: session file → GIF.
+def _session_to_media(
+    session_path,
+    output_path,
+    turns=None,
+    fmt="gif",
+    music=None,
+    loop_music=False,
+    font=None,
+):
+    """Core pipeline: session file → animated media.
 
     Args:
         session_path: Path to session JSON/JSONL file.
-        output_path: Path for the output .gif file.
+        output_path: Path for the output file.
         turns: Optional turn limit (int for first N, or (start, end) tuple).
+        fmt: Output format — "gif", "mp4", or "avif".
+        music: Optional path to music file (mp4 only).
+        loop_music: Whether to loop the music track.
+        font: Optional path to a TTF font file.
     """
     from agent_log_gif.animator import generate_frames
     from agent_log_gif.backends.gif import save_gif
+    from agent_log_gif.theme import TerminalTheme
     from agent_log_gif.timeline import loglines_to_timeline, visible_events
+
+    # Validate format + audio combination
+    if music and fmt != "mp4":
+        raise click.ClickException("--music is only supported with --format mp4")
 
     click.echo(f"Parsing {session_path}...")
     data = parse_session_file(session_path)
@@ -118,13 +135,41 @@ def _session_to_gif(session_path, output_path, turns=None):
     click.echo(
         f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
     )
-    frames = generate_frames(selected_events)
+    theme = TerminalTheme()
+    if font:
+        font_path = Path(font)
+        if not font_path.exists():
+            raise click.ClickException(f"Font file not found: {font}")
+        theme = TerminalTheme(font_path=str(font_path))
+
+    frames = generate_frames(selected_events, theme=theme)
 
     if not frames:
         raise click.ClickException("No frames generated.")
 
     click.echo(f"Writing {output_path}...")
-    save_gif(frames, output_path)
+
+    if fmt == "gif":
+        save_gif(frames, output_path)
+    elif fmt == "mp4":
+        from agent_log_gif.backends.video import save_mp4
+
+        save_mp4(frames, output_path)
+
+        if music:
+            from agent_log_gif.backends.audio import mix_audio
+
+            # Mix audio into a temp file, then replace
+            mixed_path = Path(str(output_path) + ".mixed.mp4")
+            mix_audio(output_path, music, mixed_path, loop=loop_music)
+            mixed_path.replace(output_path)
+            click.echo(f"Audio mixed from {music}")
+    elif fmt == "avif":
+        from agent_log_gif.backends.video import save_avif
+
+        save_avif(frames, output_path)
+    else:
+        raise click.ClickException(f"Unknown format: {fmt}")
 
     size_kb = Path(output_path).stat().st_size / 1024
     click.echo(f"Done! {output_path} ({size_kb:.0f} KB, {len(frames)} frames)")
@@ -222,7 +267,14 @@ def cli():
     "-o",
     "--output",
     type=click.Path(),
-    help="Output GIF file path. Defaults to temp file.",
+    help="Output file path. Defaults to temp file.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
+    default="gif",
+    help="Output format (default: gif). mp4/avif require ffmpeg.",
 )
 @click.option(
     "--turns",
@@ -231,17 +283,29 @@ def cli():
     help="Turn selection: N for first N turns, M,N for turns M through N.",
 )
 @click.option(
+    "--music",
+    type=click.Path(exists=True),
+    default=None,
+    help="Music track to mix into video (mp4 only).",
+)
+@click.option(
+    "--loop-music",
+    is_flag=True,
+    default=False,
+    help="Loop the music track if shorter than the video.",
+)
+@click.option(
     "--open/--no-open",
     "open_browser",
     default=None,
-    help="Open the generated GIF in your default viewer.",
+    help="Open the generated file in your default viewer.",
 )
 @click.option(
     "--limit",
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, turns, open_browser, limit):
+def local_cmd(output, fmt, turns, music, loop_music, open_browser, limit):
     """Select a local Claude Code session and generate a GIF."""
     from datetime import datetime
 
@@ -282,14 +346,21 @@ def local_cmd(output, turns, open_browser, limit):
 
     # Determine output path
     if output is None:
-        output = Path(tempfile.gettempdir()) / f"{selected.stem}.gif"
+        output = Path(tempfile.gettempdir()) / f"{selected.stem}.{fmt}"
         should_open = open_browser if open_browser is not None else True
     else:
         output = Path(output)
         should_open = open_browser if open_browser is not None else False
 
     parsed_turns = _parse_turns(turns) if turns else None
-    _session_to_gif(selected, output, turns=parsed_turns)
+    _session_to_media(
+        selected,
+        output,
+        turns=parsed_turns,
+        fmt=fmt,
+        music=music,
+        loop_music=loop_music,
+    )
 
     if should_open:
         _open_file(output)
@@ -301,7 +372,14 @@ def local_cmd(output, turns, open_browser, limit):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output GIF file path. Defaults to <input-stem>.gif.",
+    help="Output file path. Defaults to <input-stem>.<format>.",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
+    default="gif",
+    help="Output format (default: gif). mp4/avif require ffmpeg.",
 )
 @click.option(
     "--turns",
@@ -310,12 +388,30 @@ def local_cmd(output, turns, open_browser, limit):
     help="Turn selection: N for first N turns, M,N for turns M through N.",
 )
 @click.option(
+    "--music",
+    type=click.Path(exists=True),
+    default=None,
+    help="Music track to mix into video (mp4 only).",
+)
+@click.option(
+    "--loop-music",
+    is_flag=True,
+    default=False,
+    help="Loop the music track if shorter than the video.",
+)
+@click.option(
+    "--font",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to a TTF font file (default: bundled JetBrains Mono).",
+)
+@click.option(
     "--open/--no-open",
     "open_browser",
     default=False,
-    help="Open the generated GIF in your default viewer.",
+    help="Open the generated file in your default viewer.",
 )
-def json_cmd(json_file, output, turns, open_browser):
+def json_cmd(json_file, output, fmt, turns, music, loop_music, font, open_browser):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
     # Handle URL input
     if is_url(json_file):
@@ -328,10 +424,18 @@ def json_cmd(json_file, output, turns, open_browser):
 
     # Determine output path
     if output is None:
-        output = Path(json_file_path.stem + ".gif")
+        output = Path(json_file_path.stem + f".{fmt}")
 
     parsed_turns = _parse_turns(turns) if turns else None
-    _session_to_gif(json_file_path, output, turns=parsed_turns)
+    _session_to_media(
+        json_file_path,
+        output,
+        turns=parsed_turns,
+        fmt=fmt,
+        music=music,
+        loop_music=loop_music,
+        font=font,
+    )
 
     if open_browser:
         _open_file(output)
