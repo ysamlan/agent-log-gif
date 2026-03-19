@@ -6,7 +6,7 @@ Usage:
     uv run scripts/generate_demos.py   # directly
 
 Outputs:
-    demo.gif                    — Mac chrome, Claude Code session
+    demo.gif                    — Main above-the-fold demo (inbox zero scenario)
     docs/demo-windows-codex.gif — Windows chrome, Codex session
 """
 
@@ -15,20 +15,25 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "scripts"
 TESTS = ROOT / "tests"
 DOCS = ROOT / "docs"
 
 
 DEMOS = [
     {
-        "description": "Main demo (mac chrome, Claude Code)",
+        "description": "Main demo — inbox zero scenario (mac chrome, --show tools)",
         "output": ROOT / "demo.gif",
         "args": [
-            str(TESTS / "sample_session.jsonl"),
+            str(SCRIPTS / "demo_session.jsonl"),
             "--chrome",
             "mac",
-            "--turns",
-            "3",
+            "--show",
+            "tools",
+            "--speed",
+            "1.5",
+            "--spinner-time",
+            "0.5",
         ],
     },
     {

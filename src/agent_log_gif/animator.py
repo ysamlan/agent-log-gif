@@ -407,12 +407,14 @@ def _animate_spinner(
     """
     if transcript_source == "codex":
         # Codex style: "• Working (Xs · esc to interrupt)" — static, no animation
+        # Use custom verbs if provided, otherwise just "Working"
+        codex_verb = random.choice(verbs) if verbs is not None else "Working"
         total_frames = cycles * len(SPINNER_FRAMES)
         for i in range(total_frames):
             elapsed = (i * SPINNER_FRAME_MS) // 1000
             spinner_line: StyledLine = [
                 ("• ", theme.comment),
-                ("Working", theme.comment),
+                (codex_verb, theme.comment),
                 (f" ({elapsed}s · esc to interrupt)", theme.comment),
             ]
             snapshot = buffer + [spinner_line] + prompt_area
