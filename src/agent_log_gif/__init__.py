@@ -1,6 +1,8 @@
 """Convert Claude Code or Codex session logs to animated GIFs."""
 
 import platform
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -56,6 +58,88 @@ from agent_log_gif.web import (  # noqa: F401 - re-exported for backward compat
     get_org_uuid_from_config,
 )
 
+# Default turn cap for GIF output
+DEFAULT_MAX_TURNS = 20
+
+
+def _session_to_gif(session_path, output_path, turns=None):
+    """Core pipeline: session file → GIF.
+
+    Args:
+        session_path: Path to session JSON/JSONL file.
+        output_path: Path for the output .gif file.
+        turns: Optional turn limit (int for first N, or (start, end) tuple).
+    """
+    from agent_log_gif.animator import generate_frames
+    from agent_log_gif.backends.gif import save_gif
+    from agent_log_gif.timeline import loglines_to_timeline, visible_events
+
+    click.echo(f"Parsing {session_path}...")
+    data = parse_session_file(session_path)
+    loglines = data.get("loglines", [])
+
+    events = loglines_to_timeline(loglines)
+    events = visible_events(events)
+
+    if not events:
+        raise click.ClickException("No visible messages found in session.")
+
+    # Group events into turns (user message + following assistant messages)
+    turn_groups = []
+    current_turn = []
+    for event in events:
+        if event.type.value == "user_message" and current_turn:
+            turn_groups.append(current_turn)
+            current_turn = []
+        current_turn.append(event)
+    if current_turn:
+        turn_groups.append(current_turn)
+
+    total_turns = len(turn_groups)
+
+    # Apply turn selection
+    if turns is not None:
+        if isinstance(turns, tuple):
+            start, end = turns
+            turn_groups = turn_groups[start - 1 : end]
+        else:
+            turn_groups = turn_groups[:turns]
+    elif total_turns > DEFAULT_MAX_TURNS:
+        click.echo(
+            f"Session has {total_turns} turns. Showing first {DEFAULT_MAX_TURNS}. "
+            f"Use --turns to adjust."
+        )
+        turn_groups = turn_groups[:DEFAULT_MAX_TURNS]
+
+    # Flatten back to event list
+    selected_events = [e for group in turn_groups for e in group]
+    shown_turns = len(turn_groups)
+
+    click.echo(
+        f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
+    )
+    frames = generate_frames(selected_events)
+
+    if not frames:
+        raise click.ClickException("No frames generated.")
+
+    click.echo(f"Writing {output_path}...")
+    save_gif(frames, output_path)
+
+    size_kb = Path(output_path).stat().st_size / 1024
+    click.echo(f"Done! {output_path} ({size_kb:.0f} KB, {len(frames)} frames)")
+
+
+def _parse_turns(turns_str):
+    """Parse --turns value into int or (start, end) tuple.
+
+    Examples: "5" → 5, "3,8" → (3, 8)
+    """
+    if "," in turns_str:
+        parts = turns_str.split(",", 1)
+        return (int(parts[0]), int(parts[1]))
+    return int(turns_str)
+
 
 def is_url(path):
     """Check if a path is a URL (starts with http:// or https://)."""
@@ -102,7 +186,6 @@ def resolve_credentials(token, org_uuid):
     Returns (token, org_uuid) tuple.
     Raises click.ClickException if credentials cannot be resolved.
     """
-    # Get token
     if token is None:
         token = get_access_token_from_keychain()
         if token is None:
@@ -116,7 +199,6 @@ def resolve_credentials(token, org_uuid):
                     "On non-macOS platforms, you must provide --token with your access token."
                 )
 
-    # Get org UUID
     if org_uuid is None:
         org_uuid = get_org_uuid_from_config()
         if org_uuid is None:
@@ -137,11 +219,29 @@ def cli():
 
 @cli.command("local")
 @click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    help="Output GIF file path. Defaults to temp file.",
+)
+@click.option(
+    "--turns",
+    type=str,
+    default=None,
+    help="Turn selection: N for first N turns, M,N for turns M through N.",
+)
+@click.option(
+    "--open/--no-open",
+    "open_browser",
+    default=None,
+    help="Open the generated GIF in your default viewer.",
+)
+@click.option(
     "--limit",
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(limit):
+def local_cmd(output, turns, open_browser, limit):
     """Select a local Claude Code session and generate a GIF."""
     from datetime import datetime
 
@@ -166,7 +266,6 @@ def local_cmd(limit):
         mod_time = datetime.fromtimestamp(stat.st_mtime)
         size_kb = stat.st_size / 1024
         date_str = mod_time.strftime("%Y-%m-%d %H:%M")
-        # Truncate summary if too long
         if len(summary) > 50:
             summary = summary[:47] + "..."
         display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
@@ -181,27 +280,61 @@ def local_cmd(limit):
         click.echo("No session selected.")
         return
 
-    click.echo(f"Selected session: {selected}")
-    click.echo("GIF output not yet implemented.")
+    # Determine output path
+    if output is None:
+        output = Path(tempfile.gettempdir()) / f"{selected.stem}.gif"
+        should_open = open_browser if open_browser is not None else True
+    else:
+        output = Path(output)
+        should_open = open_browser if open_browser is not None else False
+
+    parsed_turns = _parse_turns(turns) if turns else None
+    _session_to_gif(selected, output, turns=parsed_turns)
+
+    if should_open:
+        _open_file(output)
 
 
 @cli.command("json")
 @click.argument("json_file", type=click.Path())
-def json_cmd(json_file):
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    help="Output GIF file path. Defaults to <input-stem>.gif.",
+)
+@click.option(
+    "--turns",
+    type=str,
+    default=None,
+    help="Turn selection: N for first N turns, M,N for turns M through N.",
+)
+@click.option(
+    "--open/--no-open",
+    "open_browser",
+    default=False,
+    help="Open the generated GIF in your default viewer.",
+)
+def json_cmd(json_file, output, turns, open_browser):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
     # Handle URL input
     if is_url(json_file):
         click.echo(f"Fetching {json_file}...")
-        temp_file = fetch_url_to_tempfile(json_file)
-        json_file_path = temp_file
+        json_file_path = fetch_url_to_tempfile(json_file)
     else:
-        # Validate that local file exists
         json_file_path = Path(json_file)
         if not json_file_path.exists():
             raise click.ClickException(f"File not found: {json_file}")
 
-    click.echo(f"Session file: {json_file_path}")
-    click.echo("GIF output not yet implemented.")
+    # Determine output path
+    if output is None:
+        output = Path(json_file_path.stem + ".gif")
+
+    parsed_turns = _parse_turns(turns) if turns else None
+    _session_to_gif(json_file_path, output, turns=parsed_turns)
+
+    if open_browser:
+        _open_file(output)
 
 
 @cli.command("web")
@@ -210,18 +343,18 @@ def json_cmd(json_file):
 @click.option(
     "--org-uuid", help="Organization UUID (auto-detected from ~/.claude.json)"
 )
-@click.option(
-    "--repo",
-    help="GitHub repo (owner/name). Filters session list.",
-)
+@click.option("--repo", help="GitHub repo (owner/name). Filters session list.")
 def web_cmd(session_id, token, org_uuid, repo):
-    """Fetch a web session from the Claude API and generate a GIF."""
+    """Fetch a web session from the Claude API and generate a GIF.
+
+    NOTE: This command is best-effort/unsupported due to changes in the
+    unofficial API.
+    """
     try:
         token, org_uuid = resolve_credentials(token, org_uuid)
     except click.ClickException:
         raise
 
-    # If no session ID provided, show interactive picker
     if session_id is None:
         try:
             sessions_data = fetch_sessions(token, org_uuid)
@@ -236,16 +369,13 @@ def web_cmd(session_id, token, org_uuid, repo):
         if not sessions:
             raise click.ClickException("No sessions found.")
 
-        # Enrich sessions with repo information (extracted from session metadata)
         sessions = enrich_sessions_with_repos(sessions)
 
-        # Filter by repo if specified
         if repo:
             sessions = filter_sessions_by_repo(sessions, repo)
             if not sessions:
                 raise click.ClickException(f"No sessions found for repo: {repo}")
 
-        # Build choices for questionary
         choices = []
         for s in sessions:
             sid = s.get("id", "unknown")
@@ -262,7 +392,6 @@ def web_cmd(session_id, token, org_uuid, repo):
 
         session_id = selected
 
-    # Fetch the session
     click.echo(f"Fetching session {session_id}...")
     try:
         fetch_session(token, org_uuid, session_id)
@@ -273,7 +402,18 @@ def web_cmd(session_id, token, org_uuid, repo):
     except httpx.RequestError as e:
         raise click.ClickException(f"Network error: {e}")
 
-    click.echo("GIF output not yet implemented.")
+    click.echo("GIF output for web sessions not yet implemented.")
+
+
+def _open_file(path):
+    """Open a file with the system default viewer."""
+    path = str(path)
+    if sys.platform == "darwin":
+        subprocess.run(["open", path])
+    elif sys.platform == "win32":
+        subprocess.run(["start", path], shell=True)
+    else:
+        subprocess.run(["xdg-open", path])
 
 
 def main():
