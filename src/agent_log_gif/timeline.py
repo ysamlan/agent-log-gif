@@ -17,6 +17,14 @@ class EventType(Enum):
 # Events visible by default in GIF output
 VISIBLE_EVENT_TYPES = {EventType.USER_MESSAGE, EventType.ASSISTANT_MESSAGE}
 
+# Named show presets: map user-facing names to event type sets
+SHOW_EXTRAS = {
+    "tools": {EventType.TOOL_CALL, EventType.TOOL_RESULT},
+    "calls": {EventType.TOOL_CALL},
+    "thinking": {EventType.THINKING},
+    "all": {EventType.THINKING, EventType.TOOL_CALL, EventType.TOOL_RESULT},
+}
+
 
 @dataclass(frozen=True)
 class ReplayEvent:
@@ -119,10 +127,13 @@ def loglines_to_timeline(loglines: list[dict]) -> list[ReplayEvent]:
                             )
                     elif block_type == "tool_use":
                         tool_name = block.get("name", "Unknown")
+                        tool_summary = _tool_call_summary(
+                            tool_name, block.get("input", {})
+                        )
                         events.append(
                             ReplayEvent(
                                 type=EventType.TOOL_CALL,
-                                text=tool_name,
+                                text=tool_summary,
                                 timestamp=timestamp,
                             )
                         )
@@ -130,6 +141,64 @@ def loglines_to_timeline(loglines: list[dict]) -> list[ReplayEvent]:
     return events
 
 
-def visible_events(events: list[ReplayEvent]) -> list[ReplayEvent]:
-    """Filter to only events visible in default GIF output."""
-    return [e for e in events if e.type in VISIBLE_EVENT_TYPES]
+def visible_events(
+    events: list[ReplayEvent], show: set[EventType] | None = None
+) -> list[ReplayEvent]:
+    """Filter to events visible in GIF output.
+
+    Always includes user and assistant messages. Pass extra event types
+    via ``show`` to include tool calls, tool results, and/or thinking.
+    """
+    visible = VISIBLE_EVENT_TYPES | (show or set())
+    return [e for e in events if e.type in visible]
+
+
+def parse_show_flag(value: str) -> set[EventType]:
+    """Parse a comma-separated ``--show`` value into event types.
+
+    Accepted tokens: tools, calls, thinking, all.
+    """
+    result: set[EventType] = set()
+    for token in value.split(","):
+        token = token.strip().lower()
+        if token in SHOW_EXTRAS:
+            result |= SHOW_EXTRAS[token]
+        else:
+            valid = ", ".join(sorted(SHOW_EXTRAS))
+            raise ValueError(f"Unknown --show value: {token!r}. Choose from: {valid}")
+    return result
+
+
+def _tool_call_summary(name: str, inputs: dict) -> str:
+    """Build a short one-line summary for a tool call.
+
+    Examples:
+        Write /project/hello.py
+        Bash git add . && git commit ...
+        Read /src/main.py
+        exec_command pytest -q
+    """
+    # Pick the most informative input field
+    hint = ""
+    if "file_path" in inputs:
+        hint = inputs["file_path"]
+    elif "command" in inputs:
+        hint = inputs["command"]
+    elif "cmd" in inputs:
+        hint = inputs["cmd"]
+    elif "pattern" in inputs:
+        hint = inputs["pattern"]
+    elif "path" in inputs:
+        hint = inputs["path"]
+    elif isinstance(inputs, dict) and inputs:
+        # Fallback: grab the first short string value
+        for v in inputs.values():
+            if isinstance(v, str) and len(v) < 200:
+                hint = v
+                break
+
+    if hint:
+        from agent_log_gif.parsers import truncate_text
+
+        return f"{name} {truncate_text(hint, 60)}"
+    return name

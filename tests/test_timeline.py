@@ -172,3 +172,66 @@ class TestVisibleEvents:
     def test_empty_list(self):
         """Empty input returns empty output."""
         assert visible_events([]) == []
+
+    def test_show_tools_includes_tool_events(self):
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash echo"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="output"),
+            ReplayEvent(type=EventType.THINKING, text="Hmm"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+        filtered = visible_events(
+            events, show={EventType.TOOL_CALL, EventType.TOOL_RESULT}
+        )
+        types = [e.type for e in filtered]
+        assert EventType.TOOL_CALL in types
+        assert EventType.TOOL_RESULT in types
+        assert EventType.THINKING not in types
+
+    def test_show_all_includes_everything(self):
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.THINKING, text="Hmm"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="out"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+        filtered = visible_events(
+            events,
+            show={EventType.THINKING, EventType.TOOL_CALL, EventType.TOOL_RESULT},
+        )
+        assert len(filtered) == 5
+
+
+class TestParseShowFlag:
+    def test_single_token(self):
+        from agent_log_gif.timeline import parse_show_flag
+
+        result = parse_show_flag("tools")
+        assert EventType.TOOL_CALL in result
+        assert EventType.TOOL_RESULT in result
+
+    def test_comma_separated(self):
+        from agent_log_gif.timeline import parse_show_flag
+
+        result = parse_show_flag("calls,thinking")
+        assert EventType.TOOL_CALL in result
+        assert EventType.THINKING in result
+        assert EventType.TOOL_RESULT not in result
+
+    def test_all(self):
+        from agent_log_gif.timeline import parse_show_flag
+
+        result = parse_show_flag("all")
+        assert EventType.TOOL_CALL in result
+        assert EventType.TOOL_RESULT in result
+        assert EventType.THINKING in result
+
+    def test_invalid_raises(self):
+        import pytest
+
+        from agent_log_gif.timeline import parse_show_flag
+
+        with pytest.raises(ValueError, match="Unknown --show value"):
+            parse_show_flag("bogus")

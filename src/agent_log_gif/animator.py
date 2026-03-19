@@ -11,6 +11,7 @@ import textwrap
 
 from PIL import Image
 
+from agent_log_gif.parsers import truncate_text
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
 from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, SPINNER_VERBS
 from agent_log_gif.theme import TerminalTheme
@@ -33,6 +34,11 @@ SPINNER_CYCLES = 3
 PROMPT_CHAR = "\u276f"  # ❯
 ASSISTANT_CHAR = "\u25cf"  # ●
 SEPARATOR_CHAR = "\u2500"  # ─
+BLOCK_CHAR = "\u25c6"  # ◆ (used for tool calls and thinking)
+
+# Max lines to show for tool results and thinking blocks
+TOOL_RESULT_MAX_LINES = 4
+THINKING_MAX_LINES = 3
 
 
 def _wrap_text(text: str, width: int, prefix_len: int = 0) -> list[str]:
@@ -60,6 +66,36 @@ def _wrap_text(text: str, width: int, prefix_len: int = 0) -> list[str]:
     return lines
 
 
+def _snap_muted_block(
+    buffer: list[StyledLine],
+    prefix: str,
+    text: str,
+    theme: TerminalTheme,
+    max_lines: int | None = None,
+    trailing_blank: bool = False,
+) -> None:
+    """Append a muted text block to the buffer (no typing animation).
+
+    Used for tool calls, tool results, and thinking blocks.
+    Text is split by newlines, truncated to max_lines, and each line
+    is capped to the terminal width.
+    """
+    max_width = theme.cols - len(prefix)
+    lines = text.split("\n")
+    if max_lines is not None and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines.append("\u2026")  # …
+    for i, line_text in enumerate(lines):
+        line_text = truncate_text(line_text, max_width)
+        if i == 0:
+            buffer.append([(prefix, theme.comment), (line_text, theme.comment)])
+        else:
+            indent = " " * len(prefix)
+            buffer.append([(indent + line_text, theme.comment)])
+    if trailing_blank:
+        buffer.append([])
+
+
 def generate_frames(
     events: list[ReplayEvent],
     theme: TerminalTheme | None = None,
@@ -69,8 +105,9 @@ def generate_frames(
     """Convert replay events into animated frames.
 
     Args:
-        events: List of ReplayEvent to animate. Only USER_MESSAGE and
-                ASSISTANT_MESSAGE are rendered; others are skipped.
+        events: List of ReplayEvent to animate. Renders USER_MESSAGE,
+                ASSISTANT_MESSAGE, and optionally TOOL_CALL, TOOL_RESULT,
+                THINKING (when included via --show).
         theme: Terminal theme (uses defaults if None). Ignored if renderer is provided.
         renderer: Terminal renderer (creates one from theme if None).
 
@@ -155,6 +192,35 @@ def generate_frames(
             )
 
             # Brief pause after assistant
+            frames.append(_snap(buffer, PAUSE_MS))
+            last_event_type = event.type
+
+        elif event.type == EventType.TOOL_CALL:
+            _snap_muted_block(buffer, f"{BLOCK_CHAR} ", event.text, theme)
+            frames.append(_snap(buffer, PAUSE_MS))
+            last_event_type = event.type
+
+        elif event.type == EventType.TOOL_RESULT:
+            _snap_muted_block(
+                buffer,
+                "    ",
+                event.text,
+                theme,
+                max_lines=TOOL_RESULT_MAX_LINES,
+                trailing_blank=True,
+            )
+            frames.append(_snap(buffer, PAUSE_MS))
+            last_event_type = event.type
+
+        elif event.type == EventType.THINKING:
+            _snap_muted_block(
+                buffer,
+                f"{BLOCK_CHAR} Thinking\u2026 ",
+                event.text,
+                theme,
+                max_lines=THINKING_MAX_LINES,
+                trailing_blank=True,
+            )
             frames.append(_snap(buffer, PAUSE_MS))
             last_event_type = event.type
 

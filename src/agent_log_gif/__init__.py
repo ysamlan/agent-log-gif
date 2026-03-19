@@ -72,6 +72,10 @@ def _session_to_media(
     font=None,
     chrome="mac",
     color_scheme=None,
+    cols=None,
+    rows=None,
+    font_size=None,
+    show=None,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -79,18 +83,31 @@ def _session_to_media(
     from agent_log_gif.chrome import ChromeStyle
     from agent_log_gif.renderer import TerminalRenderer
     from agent_log_gif.theme import TerminalTheme
-    from agent_log_gif.timeline import EventType, loglines_to_timeline, visible_events
+    from agent_log_gif.timeline import (
+        EventType,
+        loglines_to_timeline,
+        parse_show_flag,
+        visible_events,
+    )
 
     # Validate format + audio combination
     if music and fmt != "mp4":
         raise click.ClickException("--music is only supported with --format mp4")
+
+    # Parse --show flag
+    show_extras = None
+    if show:
+        try:
+            show_extras = parse_show_flag(show)
+        except ValueError as e:
+            raise click.ClickException(str(e))
 
     click.echo(f"Parsing {session_path}...")
     data = parse_session_file(session_path)
     loglines = data.get("loglines", [])
 
     events = loglines_to_timeline(loglines)
-    events = visible_events(events)
+    events = visible_events(events, show=show_extras)
 
     if not events:
         raise click.ClickException("No visible messages found in session.")
@@ -135,6 +152,12 @@ def _session_to_media(
         if not font_path.exists():
             raise click.ClickException(f"Font file not found: {font}")
         theme_kwargs["font_path"] = str(font_path)
+    if cols is not None:
+        theme_kwargs["cols"] = cols
+    if rows is not None:
+        theme_kwargs["rows"] = rows
+    if font_size is not None:
+        theme_kwargs["font_size"] = font_size
     if color_scheme:
         try:
             theme = TerminalTheme.from_color_scheme(color_scheme, **theme_kwargs)
@@ -319,6 +342,29 @@ def _media_options(fn):
                 default=None,
                 help="Terminal color scheme (e.g. Dracula, 'Gruvbox Dark', Nord).",
             ),
+            click.option(
+                "--cols",
+                type=int,
+                default=None,
+                help="Terminal width in columns (default: 80).",
+            ),
+            click.option(
+                "--rows",
+                type=int,
+                default=None,
+                help="Terminal height in rows (default: 30).",
+            ),
+            click.option(
+                "--font-size",
+                type=int,
+                default=None,
+                help="Font size in pixels (default: 16).",
+            ),
+            click.option(
+                "--show",
+                default=None,
+                help="Extra content to show: tools, calls, thinking, all (comma-separated).",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -353,6 +399,10 @@ def local_cmd(
     font,
     chrome,
     color_scheme,
+    cols,
+    rows,
+    font_size,
+    show,
     open_browser,
     limit,
 ):
@@ -413,6 +463,10 @@ def local_cmd(
         font=font,
         chrome=chrome,
         color_scheme=color_scheme,
+        cols=cols,
+        rows=rows,
+        font_size=font_size,
+        show=show,
     )
 
     if should_open:
@@ -444,6 +498,10 @@ def json_cmd(
     font,
     chrome,
     color_scheme,
+    cols,
+    rows,
+    font_size,
+    show,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -471,6 +529,10 @@ def json_cmd(
         font=font,
         chrome=chrome,
         color_scheme=color_scheme,
+        cols=cols,
+        rows=rows,
+        font_size=font_size,
+        show=show,
     )
 
     if open_browser:

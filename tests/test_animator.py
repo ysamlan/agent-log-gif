@@ -44,15 +44,28 @@ class TestGenerateFrames:
         frames = generate_frames(events)
         assert len(frames) > 0
 
-    def test_non_visible_events_skipped(self):
-        """Thinking and tool events produce no frames."""
+    def test_non_visible_events_filtered_by_visible_events(self):
+        """Thinking and tool events are filtered out by visible_events()."""
+        from agent_log_gif.timeline import visible_events
+
         events = [
             ReplayEvent(type=EventType.THINKING, text="hmm"),
             ReplayEvent(type=EventType.TOOL_CALL, text="Bash"),
             ReplayEvent(type=EventType.TOOL_RESULT, text="output"),
         ]
+        assert visible_events(events) == []
+
+    def test_tool_and_thinking_events_render_when_included(self):
+        """Tool and thinking events produce frames when passed to generate_frames."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hello"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash echo hi"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="hi"),
+            ReplayEvent(type=EventType.THINKING, text="Let me think"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
         frames = generate_frames(events)
-        assert frames == []
+        assert len(frames) > 0
 
     def test_multi_turn_has_separator(self):
         """Multiple turns have separator lines between them."""

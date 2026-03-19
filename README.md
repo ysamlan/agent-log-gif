@@ -166,6 +166,10 @@ agent-log-gif json [OPTIONS] FILE
   --chrome STYLE           Window chrome: none|mac|mac-square|windows|linux
   --color-scheme NAME      Terminal color scheme (e.g. Dracula, Nord)
   --font PATH              Custom TTF font file
+  --cols INT               Terminal width in columns (default: 80)
+  --rows INT               Terminal height in rows (default: 30)
+  --font-size INT          Font size in pixels (default: 16)
+  --show TYPES             Extra content: tools, calls, thinking, all
   --open / --no-open       Open result in default viewer
 ```
 
