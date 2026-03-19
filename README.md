@@ -173,6 +173,24 @@ agent-log-gif json [OPTIONS] FILE
   --open / --no-open       Open result in default viewer
 ```
 
+## Claude Code skill
+
+agent-log-gif includes a skill that lets Claude find your sessions and generate animations for you conversationally.
+
+**Install via [skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add ysamlan/agent-log-gif
+```
+
+**Or copy manually** into your project's `.claude/skills/` directory:
+
+```bash
+cp -r skills/agent-log-gif .claude/skills/
+```
+
+Then ask Claude things like "make a gif of my last coding session" or "find the session where I worked on auth and animate it."
+
 ## Credits
 
 Session parsing logic originally based on [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts).

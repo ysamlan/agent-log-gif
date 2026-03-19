@@ -288,6 +288,85 @@ def resolve_credentials(token, org_uuid):
     return token, org_uuid
 
 
+def _list_sessions(source: str) -> None:
+    """List recent sessions for the given source (claude or codex)."""
+    for filepath, summary, label in _gather_sessions(source, limit=20):
+        _echo_session(filepath, summary)
+
+
+def _search_sessions(keyword: str, source: str | None) -> None:
+    """Search sessions by keyword across the given source(s)."""
+    sources = [source] if source else ["claude", "codex"]
+    found = 0
+
+    for src in sources:
+        folder = _session_folder(src)
+        if not folder or not folder.exists():
+            continue
+
+        for filepath in folder.glob("**/*.jsonl"):
+            if filepath.name.startswith("agent-"):
+                continue
+            try:
+                text = filepath.read_text(encoding="utf-8", errors="ignore")
+                if keyword.lower() not in text.lower():
+                    continue
+                summary = get_session_summary(filepath)
+                if summary == "(no summary)":
+                    continue
+                _echo_session(filepath, summary)
+                found += 1
+                if found >= 20:
+                    return
+            except OSError:
+                continue
+
+    if found == 0:
+        click.echo(f'No sessions found matching "{keyword}".')
+
+
+def _session_folder(source: str) -> Path | None:
+    """Return the session folder path for a source, or None."""
+    if source == "claude":
+        return Path.home() / ".claude" / "projects"
+    if source == "codex":
+        return Path.home() / ".codex" / "sessions"
+    return None
+
+
+def _gather_sessions(source: str, limit: int = 20):
+    """Yield (filepath, summary, label) tuples for a source."""
+    folder = _session_folder(source)
+    label = "Claude Code" if source == "claude" else "Codex"
+
+    if not folder or not folder.exists():
+        click.echo(f"No {label} sessions found ({folder} does not exist).")
+        return
+
+    results = find_local_sessions(folder, limit=limit)
+    if not results:
+        click.echo(f"No {label} sessions found.")
+        return
+
+    click.echo(f"{label} sessions ({len(results)} most recent):\n")
+    for filepath, summary in results:
+        yield filepath, summary, label
+
+
+def _echo_session(filepath: Path, summary: str) -> None:
+    """Print a single session entry with date, size, summary, and path."""
+    from datetime import datetime
+
+    stat = filepath.stat()
+    mod_time = datetime.fromtimestamp(stat.st_mtime)
+    size_kb = stat.st_size / 1024
+    date_str = mod_time.strftime("%Y-%m-%d %H:%M")
+    if len(summary) > 60:
+        summary = summary[:57] + "..."
+    click.echo(f"  {date_str}  {size_kb:5.0f} KB  {summary}")
+    click.echo(f"    {filepath}")
+
+
 def _check_optional_tools(fmt: str) -> None:
     """Warn or error about missing optional tools based on output format.
 
@@ -312,12 +391,26 @@ def _check_optional_tools(fmt: str) -> None:
 
 
 def _tool_status() -> str:
-    """Return a short status line showing which optional tools are available."""
+    """Return status lines showing optional tools and detected sessions."""
     import shutil
 
     gifsicle = "installed" if shutil.which("gifsicle") else "not found"
     ffmpeg = "installed" if shutil.which("ffmpeg") else "not found"
-    return f"  gifsicle: {gifsicle}  |  ffmpeg: {ffmpeg}"
+    lines = [f"  gifsicle: {gifsicle}  |  ffmpeg: {ffmpeg}"]
+
+    claude_dir = Path.home() / ".claude" / "projects"
+    codex_dir = Path.home() / ".codex" / "sessions"
+    sources = []
+    if claude_dir.exists():
+        sources.append("Claude Code")
+    if codex_dir.exists():
+        sources.append("Codex")
+    if sources:
+        lines.append(f"  Sessions: {', '.join(sources)}")
+    else:
+        lines.append("  Sessions: none detected")
+
+    return "\n".join(lines)
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
@@ -448,21 +541,43 @@ def local_cmd(
     open_browser,
     limit,
 ):
-    """Select a local Claude Code session and generate a GIF."""
+    """Select a local Claude Code or Codex session and generate a GIF."""
     from datetime import datetime
 
-    projects_folder = Path.home() / ".claude" / "projects"
+    claude_folder = Path.home() / ".claude" / "projects"
+    codex_folder = Path.home() / ".codex" / "sessions"
+    has_claude = claude_folder.exists()
+    has_codex = codex_folder.exists()
 
-    if not projects_folder.exists():
-        click.echo(f"Projects folder not found: {projects_folder}")
-        click.echo("No local Claude Code sessions available.")
+    if not has_claude and not has_codex:
+        click.echo("No local sessions found.")
+        click.echo(f"  Claude Code: {claude_folder} (not found)")
+        click.echo(f"  Codex:       {codex_folder} (not found)")
         return
 
-    click.echo("Loading local sessions...")
-    results = find_local_sessions(projects_folder, limit=limit)
+    # Determine which source(s) to search
+    source = None
+    if has_claude and has_codex:
+        source = questionary.select(
+            "Session source:",
+            choices=[
+                questionary.Choice("Claude Code", value="claude"),
+                questionary.Choice("Codex", value="codex"),
+            ],
+        ).ask()
+        if source is None:
+            return
+    elif has_claude:
+        source = "claude"
+    else:
+        source = "codex"
+
+    folder = claude_folder if source == "claude" else codex_folder
+    click.echo(f"Loading {source.title()} sessions...")
+    results = find_local_sessions(folder, limit=limit)
 
     if not results:
-        click.echo("No local sessions found.")
+        click.echo(f"No {source.title()} sessions found.")
         return
 
     # Build choices for questionary
@@ -560,12 +675,19 @@ def local_cmd(
 
 
 @cli.command("json")
-@click.argument("json_file", type=click.Path())
+@click.argument("json_file", type=click.Path(), required=False)
 @click.option(
     "-o",
     "--output",
     type=click.Path(),
     help="Output file path. Defaults to <input-stem>.<format>.",
+)
+@click.option(
+    "--list",
+    "list_sessions",
+    type=click.Choice(["claude", "codex"], case_sensitive=False),
+    default=None,
+    help="List recent sessions (claude or codex) instead of converting.",
 )
 @_media_options
 @click.option(
@@ -577,6 +699,7 @@ def local_cmd(
 def json_cmd(
     json_file,
     output,
+    list_sessions,
     fmt,
     turns,
     music,
@@ -591,6 +714,15 @@ def json_cmd(
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
+    if list_sessions:
+        _list_sessions(list_sessions)
+        return
+
+    if json_file is None:
+        raise click.ClickException(
+            "Missing argument 'JSON_FILE'. Use --list=claude or --list=codex to browse sessions."
+        )
+
     # Handle URL input
     if is_url(json_file):
         click.echo(f"Fetching {json_file}...")
@@ -693,13 +825,31 @@ def web_cmd(session_id, token, org_uuid, repo):
     click.echo("GIF output for web sessions not yet implemented.")
 
 
+@cli.command("search")
+@click.argument("keyword")
+@click.option(
+    "--source",
+    type=click.Choice(["claude", "codex"], case_sensitive=False),
+    default=None,
+    help="Search only Claude Code or Codex sessions. Default: search both.",
+)
+def search_cmd(keyword, source):
+    """Search sessions by keyword.
+
+    Searches session content (user messages, assistant responses, tool output)
+    for the given keyword across Claude Code and/or Codex sessions.
+    """
+    _search_sessions(keyword, source)
+
+
 def _open_file(path):
     """Open a file with the system default viewer."""
     path = str(path)
     if sys.platform == "darwin":
         subprocess.run(["open", path])
     elif sys.platform == "win32":
-        subprocess.run(["start", path], shell=True)
+        # start treats first quoted arg as window title; empty "" avoids that
+        subprocess.run(f'start "" "{path}"', shell=True)
     else:
         subprocess.run(["xdg-open", path])
 

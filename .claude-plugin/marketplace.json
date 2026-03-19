@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-log-gif",
+  "description": "Turn Claude Code and Codex sessions into animated terminal replays",
+  "owner": {
+    "name": "Yoni Samlan"
+  },
+  "plugins": [
+    {
+      "name": "agent-log-gif",
+      "description": "Generate animated GIF/MP4/AVIF terminal replays from Claude Code or Codex sessions. Helps find sessions by keyword or browsing, then generates animations with customizable chrome, color schemes, and content levels.",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/agent-log-gif"],
+      "category": "development"
+    }
+  ]
+}
