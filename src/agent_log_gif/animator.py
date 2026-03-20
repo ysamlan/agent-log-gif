@@ -11,6 +11,7 @@ import textwrap
 
 from PIL import Image
 
+from agent_log_gif.layout import LayoutFrame, compose_lines
 from agent_log_gif.parsers import truncate_text
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
 from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, SPINNER_VERBS
@@ -153,7 +154,10 @@ def generate_frames(
 
     def _snap(lines: list[StyledLine], duration: int) -> tuple[Image.Image, int]:
         """Render a frame with the prompt area (gap + ❯) at the bottom."""
-        return (renderer.render_frame(lines + prompt_area), duration)
+        composed = compose_lines(
+            LayoutFrame(transcript=lines, composer=prompt_area), theme.rows
+        )
+        return (renderer.render_frame(composed), duration)
 
     for idx, event in enumerate(events):
         next_event = events[idx + 1] if idx + 1 < len(events) else None
@@ -201,6 +205,7 @@ def generate_frames(
                 chars_per_frame=asst_chars,
                 frame_ms=asst_ms,
                 cols=theme.cols,
+                rows=theme.rows,
                 prompt_area=prompt_area,
             )
 
@@ -292,10 +297,12 @@ def _animate_user_typing(
                 remaining = remaining[max_cont_line:]
                 input_lines.append([("  " + chunk, theme.foreground), HIGHLIGHT_MARKER])
 
-        # Keep the spacer row above the input area stable while the user types,
-        # otherwise the transcript jumps when the prompt switches from idle to active.
-        snapshot = buffer + [[]] + input_lines
-        frames.append((renderer.render_frame(snapshot), frame_ms))
+        # The spacer + input lines form the composer during typing,
+        # keeping the transcript stable above.
+        composed = compose_lines(
+            LayoutFrame(transcript=buffer, composer=[[]] + input_lines), theme.rows
+        )
+        frames.append((renderer.render_frame(composed), frame_ms))
 
     # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
     wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
@@ -324,6 +331,7 @@ def _animate_typing(
     chars_per_frame: int,
     frame_ms: int,
     cols: int,
+    rows: int,
     prompt_area: list[StyledLine],
 ) -> None:
     """Add typing animation frames for a message."""
@@ -369,9 +377,14 @@ def _animate_typing(
             else:
                 partial_lines.append([("  " + visible_text, text_color)])
 
-        # Render with partial content appended to buffer + prompt line at bottom
-        snapshot = buffer + partial_lines + prompt_area
-        frames.append((renderer.render_frame(snapshot), frame_ms))
+        # Render with partial content as transient + composer at bottom
+        composed = compose_lines(
+            LayoutFrame(
+                transcript=buffer, transient=partial_lines, composer=prompt_area
+            ),
+            rows,
+        )
+        frames.append((renderer.render_frame(composed), frame_ms))
 
     # Commit full lines to buffer
     buffer.extend(full_lines)
@@ -406,8 +419,15 @@ def _animate_spinner(
                 (codex_verb, theme.comment),
                 (f" ({elapsed}s · esc to interrupt)", theme.comment),
             ]
-            snapshot = buffer + [spinner_line] + prompt_area
-            frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
+            composed = compose_lines(
+                LayoutFrame(
+                    transcript=buffer,
+                    transient=[spinner_line],
+                    composer=prompt_area,
+                ),
+                theme.rows,
+            )
+            frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
     else:
         # Claude Code style: cycling star + random verb in brand orange
         verb_list = verbs if verbs is not None else SPINNER_VERBS
@@ -423,5 +443,12 @@ def _animate_spinner(
                 (" (esc to interrupt)", theme.comment),
             ]
 
-            snapshot = buffer + [spinner_line] + prompt_area
-            frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
+            composed = compose_lines(
+                LayoutFrame(
+                    transcript=buffer,
+                    transient=[spinner_line],
+                    composer=prompt_area,
+                ),
+                theme.rows,
+            )
+            frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
