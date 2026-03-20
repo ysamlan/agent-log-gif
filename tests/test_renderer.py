@@ -217,3 +217,194 @@ class TestTerminalRenderer:
             f"Descender overlap: green pixels found at y={y} "
             f"(red row starts at y={top_red})"
         )
+
+
+class TestIncrementalRendering:
+    """Test that incremental rendering produces pixel-identical output to fresh rendering.
+
+    Each test uses a fresh TerminalRenderer as the oracle (not reset()) to ensure
+    the incremental renderer matches a fully independent stateless renderer.
+    """
+
+    THEME = TerminalTheme(
+        rows=10,
+        cols=40,
+        font_size=14,
+        padding=10,
+        padding_bottom=10,
+        background="#1e1e2e",
+        foreground="#cdd6f4",
+        selection_color="#45475a",
+        prompt_color="#89b4fa",
+    )
+
+    @staticmethod
+    def _fresh_render(theme, lines, cursor_pos=None):
+        """Render a single frame with a brand-new renderer (oracle)."""
+        return TerminalRenderer(theme).render_frame(lines, cursor_pos)
+
+    def test_incremental_matches_full_redraw_sequence(self):
+        """Render a diverse 15-frame sequence; every frame matches fresh renderer."""
+        theme = self.THEME
+        renderer = TerminalRenderer(theme)
+
+        # Build a sequence of frames with diverse transitions:
+        # empty → text → more text → highlight → scroll → cursor → highlight removal → etc.
+        frames = [
+            # 0: empty
+            ([], None),
+            # 1: single line of text
+            ([[("Hello", "#cdd6f4")]], None),
+            # 2: two lines
+            ([[("Hello", "#cdd6f4")], [("World", "#cdd6f4")]], None),
+            # 3: add highlighted line
+            (
+                [
+                    [("Hello", "#cdd6f4")],
+                    [("World", "#cdd6f4")],
+                    [("❯ ", "#89b4fa"), ("input", "#cdd6f4"), HIGHLIGHT_MARKER],
+                ],
+                None,
+            ),
+            # 4: more lines (approaching scroll)
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(8)]
+                + [[("❯ ", "#89b4fa"), ("cmd", "#cdd6f4"), HIGHLIGHT_MARKER]],
+                None,
+            ),
+            # 5: scroll — more lines than viewport
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(12)],
+                None,
+            ),
+            # 6: add cursor
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(12)],
+                (9, 3),
+            ),
+            # 7: move cursor
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(12)],
+                (8, 5),
+            ),
+            # 8: remove cursor
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(12)],
+                None,
+            ),
+            # 9: change one line in middle of viewport
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(11)]
+                + [[("CHANGED", "#ff0000")]],
+                None,
+            ),
+            # 10: highlight a line
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(11)]
+                + [[("❯ ", "#89b4fa"), ("typed", "#cdd6f4"), HIGHLIGHT_MARKER]],
+                None,
+            ),
+            # 11: remove highlight (transition)
+            (
+                [[(f"Line {i}", "#cdd6f4")] for i in range(11)]
+                + [[("plain line", "#cdd6f4")]],
+                None,
+            ),
+            # 12: completely different content
+            (
+                [[("New content", "#ff79c6")] for _ in range(5)],
+                None,
+            ),
+            # 13: back to empty
+            ([], None),
+            # 14: single line with cursor
+            ([[("Final", "#cdd6f4")]], (0, 5)),
+        ]
+
+        for i, (lines, cursor) in enumerate(frames):
+            incremental = renderer.render_frame(lines, cursor)
+            oracle = self._fresh_render(theme, lines, cursor)
+            assert incremental.tobytes() == oracle.tobytes(), (
+                f"Frame {i}: incremental output differs from fresh render"
+            )
+
+    def test_scroll_matches_fresh_render(self):
+        """Progressive line addition causing viewport scroll matches fresh renderer."""
+        theme = self.THEME
+        renderer = TerminalRenderer(theme)
+
+        for n in range(1, theme.rows + 5):
+            lines = [[(f"Row {i}", "#cdd6f4")] for i in range(n)]
+            incremental = renderer.render_frame(lines)
+            oracle = self._fresh_render(theme, lines)
+            assert incremental.tobytes() == oracle.tobytes(), (
+                f"Scroll step {n}: incremental output differs from fresh render"
+            )
+
+    def test_highlight_transition_matches_fresh_render(self):
+        """Highlighted line replaced by non-highlighted line at same position."""
+        theme = self.THEME
+        renderer = TerminalRenderer(theme)
+
+        base = [[(f"Line {i}", "#cdd6f4")] for i in range(8)]
+
+        # Frame 1: line 8 is highlighted
+        lines_hl = base + [
+            [("❯ ", "#89b4fa"), ("input text", "#cdd6f4"), HIGHLIGHT_MARKER]
+        ]
+        f1 = renderer.render_frame(lines_hl)
+        assert f1.tobytes() == self._fresh_render(theme, lines_hl).tobytes()
+
+        # Frame 2: line 8 loses highlight
+        lines_no_hl = base + [[("plain text", "#cdd6f4")]]
+        f2 = renderer.render_frame(lines_no_hl)
+        assert f2.tobytes() == self._fresh_render(theme, lines_no_hl).tobytes()
+
+        # Frame 3: line 8 gains highlight again
+        lines_hl2 = base + [
+            [("❯ ", "#89b4fa"), ("new input", "#cdd6f4"), HIGHLIGHT_MARKER]
+        ]
+        f3 = renderer.render_frame(lines_hl2)
+        assert f3.tobytes() == self._fresh_render(theme, lines_hl2).tobytes()
+
+    def test_cursor_move_matches_fresh_render(self):
+        """Cursor appears, moves, and disappears — each step matches fresh renderer."""
+        theme = self.THEME
+        renderer = TerminalRenderer(theme)
+
+        lines = [[(f"Line {i}", "#cdd6f4")] for i in range(5)]
+
+        steps = [
+            (lines, None),       # no cursor
+            (lines, (4, 0)),     # cursor appears
+            (lines, (4, 3)),     # cursor moves right
+            (lines, (3, 0)),     # cursor moves to different row
+            (lines, None),       # cursor disappears
+        ]
+
+        for i, (ln, cur) in enumerate(steps):
+            incremental = renderer.render_frame(ln, cur)
+            oracle = self._fresh_render(theme, ln, cur)
+            assert incremental.tobytes() == oracle.tobytes(), (
+                f"Cursor step {i}: incremental output differs from fresh render"
+            )
+
+    def test_reset_produces_fresh_state(self):
+        """After reset(), next frame matches a brand-new renderer."""
+        theme = self.THEME
+        renderer = TerminalRenderer(theme)
+
+        # Render some frames to build up cache state
+        renderer.render_frame([[(f"Line {i}", "#cdd6f4")] for i in range(8)])
+        renderer.render_frame(
+            [[(f"Line {i}", "#cdd6f4")] for i in range(10)], cursor_pos=(5, 2)
+        )
+
+        # Reset
+        renderer.reset()
+
+        # Next frame should match a completely fresh renderer
+        lines = [[("After reset", "#ff79c6")]]
+        after_reset = renderer.render_frame(lines)
+        oracle = self._fresh_render(theme, lines)
+        assert after_reset.tobytes() == oracle.tobytes()

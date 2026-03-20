@@ -8,6 +8,7 @@ Generates synthetic multi-turn sessions and measures:
 
 Usage:
     python scripts/profile_memory.py [--turns 5,10,15,20]
+    python scripts/profile_memory.py --breakdown --turns 10
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ import statistics
 import time
 import tracemalloc
 
+from PIL import Image, ImageDraw
+
 from agent_log_gif.animator import generate_frames
-from agent_log_gif.renderer import TerminalRenderer
+from agent_log_gif.renderer import HIGHLIGHT_MARKER, TerminalRenderer
 from agent_log_gif.theme import TerminalTheme
 from agent_log_gif.timeline import EventType, ReplayEvent
 
@@ -43,6 +46,158 @@ def _synthetic_events(num_turns: int) -> list[ReplayEvent]:
             ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text=assistant_text)
         )
     return events
+
+
+# ---------------------------------------------------------------------------
+# Per-operation breakdown instrumentation
+# ---------------------------------------------------------------------------
+
+def _render_frame_breakdown(self, lines, cursor_pos=None):
+    """Instrumented render_frame that records per-operation timing."""
+    timings = _render_frame_breakdown._timings
+
+    # 1. Image.copy (titlebar template)
+    t0 = time.perf_counter()
+    img = self._titlebar_template.copy()
+    t_copy = time.perf_counter() - t0
+
+    draw = ImageDraw.Draw(img)
+
+    # 2. draw.text + draw.rectangle (highlight bands) loop
+    visible_lines = lines[-self.theme.rows :]
+    num_visible = len(visible_lines)
+    empty_rows_above = self.theme.rows - num_visible
+    highlight_bg = self.theme.hex_to_rgb(self.theme.selection_color)
+
+    t_text_total = 0.0
+    t_rect_total = 0.0
+
+    for row_idx, line in enumerate(visible_lines):
+        x = self._ss_padding
+        y = (
+            self._ss_content_y
+            + self._ss_padding
+            + (empty_rows_above + row_idx) * self._char_height_ss
+        )
+        has_highlight = any(seg == HIGHLIGHT_MARKER for seg in line)
+
+        if has_highlight:
+            t0 = time.perf_counter()
+            draw.rectangle(
+                [
+                    0,
+                    y - self._text_nudge_ss - self._highlight_top_pad_ss,
+                    self._ss_width,
+                    y
+                    + self._char_height_ss
+                    - self._text_nudge_ss
+                    + self._highlight_bottom_pad_ss,
+                ],
+                fill=highlight_bg,
+            )
+            t_rect_total += time.perf_counter() - t0
+
+        text_y = y - self._text_nudge_ss
+        if has_highlight:
+            text_y -= self._highlight_text_raise_ss
+        for seg in line:
+            if seg == HIGHLIGHT_MARKER:
+                continue
+            text, color_hex = seg
+            rgb = self.theme.hex_to_rgb(color_hex)
+            t0 = time.perf_counter()
+            draw.text((x, text_y), text, fill=rgb, font=self._font_ss)
+            t_text_total += time.perf_counter() - t0
+            x += len(text) * self._char_width_ss
+
+    # 3. Cursor rectangle
+    if cursor_pos is not None:
+        crow, ccol = cursor_pos
+        if 0 <= crow < num_visible:
+            cx = self._ss_padding + ccol * self._char_width_ss
+            cy = (
+                self._ss_content_y
+                + self._ss_padding
+                + (empty_rows_above + crow) * self._char_height_ss
+            )
+            cursor_color = self.theme.hex_to_rgb(self.theme.foreground)
+            t0 = time.perf_counter()
+            draw.rectangle(
+                [cx, cy, cx + self._char_width_ss, cy + self._char_height_ss],
+                fill=cursor_color,
+            )
+            t_rect_total += time.perf_counter() - t0
+
+    # 4. LANCZOS resize
+    t0 = time.perf_counter()
+    result = img.resize((self.image_width, self.image_height), Image.LANCZOS)
+    t_resize = time.perf_counter() - t0
+
+    timings.append({
+        "copy": t_copy,
+        "text": t_text_total,
+        "rect": t_rect_total,
+        "resize": t_resize,
+        "total": t_copy + t_text_total + t_rect_total + t_resize,
+    })
+    return result
+
+_render_frame_breakdown._timings = []
+
+
+def _run_breakdown(num_turns: int) -> None:
+    """Run render_frame breakdown profiling and print results."""
+    from agent_log_gif.renderer import TerminalRenderer as TR
+
+    theme = TerminalTheme()
+    renderer = TerminalRenderer(theme)
+    events = _synthetic_events(num_turns)
+
+    _render_frame_breakdown._timings = []
+    _orig = TR.render_frame
+    TR.render_frame = _render_frame_breakdown
+
+    try:
+        generate_frames(events, renderer=renderer, speed=2.0, spinner_time=0.5)
+    finally:
+        TR.render_frame = _orig
+
+    timings = _render_frame_breakdown._timings
+    if not timings:
+        print("No frames rendered.")
+        return
+
+    n = len(timings)
+    keys = ["copy", "text", "rect", "resize", "total"]
+    sums = {k: sum(t[k] for t in timings) for k in keys}
+    avgs = {k: sums[k] / n * 1000 for k in keys}
+    p95s = {
+        k: sorted(t[k] for t in timings)[int(n * 0.95)] * 1000 for k in keys
+    }
+
+    total_sum = sums["total"]
+    pcts = {k: sums[k] / total_sum * 100 if total_sum > 0 else 0 for k in keys}
+
+    print(f"\nrender_frame() breakdown ({n} frames, {num_turns} turns)")
+    print("=" * 72)
+    print(f"{'Operation':<15} {'Sum(s)':>8} {'Avg(ms)':>9} {'P95(ms)':>9} {'% total':>9}")
+    print("-" * 72)
+    for k in ["copy", "text", "rect", "resize"]:
+        label = {"copy": "Image.copy", "text": "draw.text", "rect": "draw.rect", "resize": "resize"}[k]
+        print(f"{label:<15} {sums[k]:8.3f} {avgs[k]:9.3f} {p95s[k]:9.3f} {pcts[k]:8.1f}%")
+    print("-" * 72)
+    print(f"{'TOTAL':<15} {sums['total']:8.3f} {avgs['total']:9.3f} {p95s['total']:9.3f} {pcts['total']:8.1f}%")
+    print("=" * 72)
+
+    # Kill criteria check
+    resize_pct = pcts["resize"]
+    text_pct = pcts["text"]
+    print(f"\nKill criteria: resize={resize_pct:.1f}% (threshold >60%), "
+          f"text={text_pct:.1f}% (threshold <25%)")
+    if resize_pct > 60 and text_pct < 25:
+        print("KILL: resize dominates — incremental rendering won't help much.")
+    else:
+        print("PROCEED: draw.text() is a significant cost; incremental rendering viable.")
 
 
 def _profile_run(
@@ -155,9 +310,18 @@ def main():
         default=10,
         help="Number of top allocation sites to show (default: 10)",
     )
+    parser.add_argument(
+        "--breakdown",
+        action="store_true",
+        help="Run per-operation timing breakdown of render_frame()",
+    )
     args = parser.parse_args()
 
     turn_counts = [int(t.strip()) for t in args.turns.split(",")]
+
+    if args.breakdown:
+        _run_breakdown(turn_counts[-1])
+        return
     theme = TerminalTheme()
     renderer = TerminalRenderer(theme)
     render_times: list[float] = []
