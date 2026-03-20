@@ -79,6 +79,11 @@ def get_color_scheme(name: str) -> dict[str, str] | None:
     return None
 
 
+def perceived_lightness(rgb: tuple[int, int, int]) -> float:
+    """Return perceived lightness (0–255) using BT.601 luma coefficients."""
+    return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+
+
 def _highlight_for_background(bg_hex: str) -> str:
     """Derive a subtle highlight bar color from the background.
 
@@ -87,7 +92,7 @@ def _highlight_for_background(bg_hex: str) -> str:
     """
     h = bg_hex.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    luma = 0.299 * r + 0.587 * g + 0.114 * b
+    luma = perceived_lightness((r, g, b))
     if luma > 128:
         # Light: blend 4% black
         top, alpha = (0, 0, 0), 0.06

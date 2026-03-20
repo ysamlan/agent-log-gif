@@ -6,7 +6,7 @@ from enum import Enum
 
 from PIL import ImageDraw, ImageFont
 
-from agent_log_gif.theme import TerminalTheme
+from agent_log_gif.theme import TerminalTheme, perceived_lightness
 
 
 class ChromeStyle(str, Enum):
@@ -65,14 +65,8 @@ def draw_titlebar(
     # Pick icon/text color that contrasts with the titlebar.
     # If the comment color is too similar to the titlebar, derive a
     # contrasting color instead.
-    tb_luma = (
-        0.299 * titlebar_color[0]
-        + 0.587 * titlebar_color[1]
-        + 0.114 * titlebar_color[2]
-    )
-    cm_luma = (
-        0.299 * comment_color[0] + 0.587 * comment_color[1] + 0.114 * comment_color[2]
-    )
+    tb_luma = perceived_lightness(titlebar_color)
+    cm_luma = perceived_lightness(comment_color)
     if abs(tb_luma - cm_luma) > 40:
         chrome_fg = comment_color
     elif tb_luma > 128:
@@ -108,7 +102,9 @@ def _draw_mac_controls(draw: ImageDraw.Draw, ss: int) -> None:
         cx = _MAC_TRAFFIC_X_START * ss + i * _MAC_TRAFFIC_SPACING * ss
         cy = _MAC_TRAFFIC_Y * ss
         r = _MAC_TRAFFIC_RADIUS * ss
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=_hex_rgb(hex_color))
+        draw.ellipse(
+            [cx - r, cy - r, cx + r, cy + r], fill=TerminalTheme.hex_to_rgb(hex_color)
+        )
 
 
 # -- Windows 11 -----------------------------------------------------------
@@ -245,8 +241,3 @@ def _draw_rounded_top(
     draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
     draw.rectangle([width - r, 0, width, r], fill=bg_color)
     draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)
-
-
-def _hex_rgb(h: str) -> tuple[int, int, int]:
-    """Convert hex color to RGB tuple (delegates to shared cached converter)."""
-    return TerminalTheme.hex_to_rgb(h)

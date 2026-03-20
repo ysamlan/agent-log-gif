@@ -177,7 +177,7 @@ class TerminalRenderer:
             if has_highlight:
                 text_y -= self._highlight_text_raise_ss
             for seg in line:
-                if seg is HIGHLIGHT_MARKER:
+                if seg == HIGHLIGHT_MARKER:
                     continue
                 text, color_hex = seg
                 rgb = self.theme.hex_to_rgb(color_hex)
