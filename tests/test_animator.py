@@ -3,6 +3,7 @@
 from agent_log_gif.animator import (
     StatusFooter,
     _compute_turn_duration,
+    _elide_wrapped_lines,
     generate_frames,
 )
 from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, TOOL_DONE_COLOR
@@ -291,7 +292,7 @@ class TestGenerateFrames:
     def test_empty_events(self):
         """Empty event list produces no frames."""
         frames = generate_frames([])
-        assert frames == []
+        assert len(frames) == 0
 
     def test_user_only(self):
         """Single user message with no assistant still produces frames."""
@@ -553,3 +554,42 @@ class TestGenerateFrames:
         # Just verify it doesn't crash and produces frames
         frames = generate_frames(events, theme=theme)
         assert len(frames) > 0
+
+
+class TestElideWrappedLines:
+    def test_short_text_unchanged(self):
+        lines = ["line 1", "line 2", "line 3"]
+        assert _elide_wrapped_lines(lines, 10) == lines
+
+    def test_exact_limit_unchanged(self):
+        lines = [f"line {i}" for i in range(12)]
+        assert _elide_wrapped_lines(lines, 12) == lines
+
+    def test_over_limit_elides_with_head_and_tail(self):
+        lines = [f"line {i}" for i in range(20)]
+        result = _elide_wrapped_lines(lines, 12)
+        assert len(result) == 12
+        # First 6 lines preserved
+        assert result[:6] == lines[:6]
+        # Ellipsis line in the middle
+        assert "\u2026" in result[6]
+        assert "9 more lines" in result[6]
+        # Last 5 lines preserved
+        assert result[7:] == lines[15:]
+
+    def test_large_message_drastically_reduced(self):
+        """Simulates a 19K char pasted log — should cap at max_lines."""
+        lines = [f"log output line {i}" for i in range(200)]
+        result = _elide_wrapped_lines(lines, 12)
+        assert len(result) == 12
+
+    def test_long_user_message_produces_fewer_frames(self):
+        """A 5000-char user message should produce far fewer frames with elision."""
+        long_text = "error: " + "x" * 5000
+        long_frames = generate_frames(
+            [ReplayEvent(type=EventType.USER_MESSAGE, text=long_text)]
+        )
+        # Without elision: 5000/3 ≈ 1667 typing frames.
+        # With elision to 12 lines: ~312 typing frames + spinner.
+        # Should be well under 500 total.
+        assert len(long_frames) < 500

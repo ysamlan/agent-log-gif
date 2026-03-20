@@ -28,6 +28,12 @@ lint-check:
     ruff check .
     ruff format --check .
 
+# === Profiling ===
+
+# Profile memory and timing for the animation pipeline
+profile *args:
+    python scripts/profile_memory.py "$@"
+
 # === Development ===
 
 # Run the CLI tool

@@ -10,6 +10,7 @@ from agent_log_gif.backends.video import (
     save_avif,
     save_mp4,
 )
+from agent_log_gif.frame_store import FrameStore
 
 
 def _make_frame(color, duration_ms=100):
@@ -54,6 +55,19 @@ class TestSaveMp4:
         frames = [_make_frame("red", 200)]
         save_mp4(frames, output)
         assert output.exists()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+class TestSaveMp4FrameStore:
+    def test_accepts_frame_store(self, tmp_path):
+        store = FrameStore()
+        store.append(Image.new("RGB", (100, 100), "red"), 100)
+        store.append(Image.new("RGB", (100, 100), "blue"), 200)
+        output = tmp_path / "test.mp4"
+        result = save_mp4(store, output)
+        assert result == output
+        assert output.exists()
+        assert output.stat().st_size > 0
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")

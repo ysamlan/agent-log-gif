@@ -3,6 +3,7 @@
 from PIL import Image
 
 from agent_log_gif.backends.gif import save_gif
+from agent_log_gif.frame_store import FrameStore
 
 
 def _make_frame(color, duration_ms=100):
@@ -76,3 +77,15 @@ class TestSaveGif:
                 img.seek(i)
                 durations.append(img.info.get("duration", 0))
             assert durations == [100, 200, 500]
+
+    def test_accepts_frame_store(self, tmp_path):
+        """save_gif works with FrameStore input."""
+        store = FrameStore()
+        store.append(Image.new("RGB", (100, 100), "red"), 100)
+        store.append(Image.new("RGB", (100, 100), "blue"), 200)
+        output = tmp_path / "test.gif"
+        save_gif(store, output)
+
+        with Image.open(output) as img:
+            assert img.is_animated
+            assert img.n_frames == 2

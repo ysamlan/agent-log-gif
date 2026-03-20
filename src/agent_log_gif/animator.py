@@ -14,8 +14,7 @@ import textwrap
 from collections.abc import Callable
 from datetime import datetime
 
-from PIL import Image
-
+from agent_log_gif.frame_store import FrameStore
 from agent_log_gif.layout import LayoutFrame, compose_lines
 from agent_log_gif.parsers import truncate_text
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
@@ -47,8 +46,12 @@ ASSISTANT_CHAR = "\u25cf"  # ●
 BLOCK_CHAR = "\u25c6"  # ◆ (used for tool calls and thinking)
 
 # Max lines to show for tool results and thinking blocks
-TOOL_RESULT_MAX_LINES = 4
+TOOL_RESULT_MAX_LINES = 1
 THINKING_MAX_LINES = 3
+
+# Max wrapped lines for long messages (first N/2 + "…" + last N/2)
+USER_MESSAGE_MAX_LINES = 12
+ASSISTANT_MESSAGE_MAX_LINES = 20
 
 
 class StatusFooter:
@@ -151,6 +154,16 @@ def _tool_done_line(text: str, theme: TerminalTheme) -> StyledLine:
     return [(f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR), (text, theme.comment)]
 
 
+def _elide_wrapped_lines(lines: list[str], max_lines: int) -> list[str]:
+    """Elide wrapped lines: first half + '…' + last half if over max_lines."""
+    if len(lines) <= max_lines:
+        return lines
+    head = max_lines // 2
+    tail = max_lines - head - 1  # -1 for the ellipsis line
+    omitted = len(lines) - head - tail
+    return lines[:head] + [f"\u2026 ({omitted} more lines)"] + lines[-tail:]
+
+
 def _wrap_text(text: str, width: int, prefix_len: int = 0) -> list[str]:
     """Wrap text to fit within terminal width, accounting for prefix on first line."""
     if not text:
@@ -196,8 +209,13 @@ def _snap_muted_block(
     max_width = theme.cols - len(prefix)
     lines = text.split("\n")
     if max_lines is not None and len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines.append("\u2026")  # …
+        if max_lines <= 1:
+            # Single-line mode: first line + count
+            omitted = len(lines) - 1
+            lines = [lines[0], f"\u2026 +{omitted} lines"]
+        else:
+            # Head/tail elision
+            lines = _elide_wrapped_lines(lines, max_lines)
     for i, line_text in enumerate(lines):
         line_text = truncate_text(line_text, max_width)
         if i == 0:
@@ -218,7 +236,7 @@ def generate_frames(
     spinner_time: float = 1.0,
     thinking_verbs: list[str] | None = None,
     on_turn: Callable[[int, int], None] | None = None,
-) -> list[tuple[Image.Image, int]]:
+) -> FrameStore:
     """Convert replay events into animated frames.
 
     Args:
@@ -232,7 +250,7 @@ def generate_frames(
         thinking_verbs: Custom spinner verb list. Defaults to built-in whimsical verbs.
 
     Returns:
-        List of (PIL.Image, duration_ms) tuples.
+        FrameStore of (PIL.Image, duration_ms) tuples (compressed in memory).
     """
     if renderer is None:
         if theme is None:
@@ -253,7 +271,7 @@ def generate_frames(
     # Custom or default verbs
     verbs = thinking_verbs if thinking_verbs is not None else SPINNER_VERBS
 
-    frames: list[tuple[Image.Image, int]] = []
+    frames = FrameStore()
     # Persistent text buffer (list of styled lines) that grows over time
     buffer: list[StyledLine] = []
 
@@ -262,8 +280,8 @@ def generate_frames(
     prompt_line: StyledLine = [(f"{PROMPT_CHAR} ", theme.prompt_color)]
     prompt_line.append(HIGHLIGHT_MARKER)
 
-    def _snap(lines: list[StyledLine], duration: int) -> tuple[Image.Image, int]:
-        """Render a frame with the pinned bottom area.
+    def _snap(lines: list[StyledLine], duration: int) -> None:
+        """Render a frame and append to store.
 
         Transient placeholder keeps fixed height = 4 (1 transient + 3
         composer) across all frames, preventing vertical jumps.
@@ -276,7 +294,7 @@ def generate_frames(
             ),
             theme.rows,
         )
-        return (renderer.render_frame(composed), duration)
+        frames.append(renderer.render_frame(composed), duration)
 
     # Turn tracking for progress reporting
     total_turns = sum(1 for e in events if e.type == EventType.USER_MESSAGE)
@@ -330,7 +348,7 @@ def generate_frames(
             footer.start_thinking()
 
             # Pause after user message
-            frames.append(_snap(buffer, pause_ms))
+            _snap(buffer, pause_ms)
 
             # Thinking pause animation (spinner in footer)
             _animate_footer_loop(
@@ -370,7 +388,7 @@ def generate_frames(
                 buffer.append([])
 
             # Brief pause after assistant
-            frames.append(_snap(buffer, pause_ms))
+            _snap(buffer, pause_ms)
 
         elif event.type == EventType.TOOL_CALL:
             pending_tool_text = event.text
@@ -408,7 +426,7 @@ def generate_frames(
                 max_lines=TOOL_RESULT_MAX_LINES,
                 trailing_blank=True,
             )
-            frames.append(_snap(buffer, pause_ms))
+            _snap(buffer, pause_ms)
 
         elif event.type == EventType.THINKING:
             _snap_muted_block(
@@ -419,7 +437,7 @@ def generate_frames(
                 max_lines=THINKING_MAX_LINES,
                 trailing_blank=True,
             )
-            frames.append(_snap(buffer, pause_ms))
+            _snap(buffer, pause_ms)
 
     # Commit any remaining pending tool call
     if pending_tool_text is not None:
@@ -450,7 +468,7 @@ def generate_frames(
 def _animate_user_typing(
     *,
     buffer: list[StyledLine],
-    frames: list[tuple[Image.Image, int]],
+    frames: FrameStore,
     renderer: TerminalRenderer,
     text: str,
     theme: TerminalTheme,
@@ -471,6 +489,12 @@ def _animate_user_typing(
     prefix_len = len(prefix)
     max_first_line = theme.cols - prefix_len
     max_cont_line = theme.cols - 2  # continuation indent
+
+    # Elide long user messages (e.g. pasted logs) — wrap first, then elide
+    pre_wrapped = _wrap_text(text, theme.cols, prefix_len)
+    if len(pre_wrapped) > USER_MESSAGE_MAX_LINES:
+        elided = _elide_wrapped_lines(pre_wrapped, USER_MESSAGE_MAX_LINES)
+        text = "\n".join(elided)
 
     # Progressive typing — input area grows as text wraps
     chars_typed = 0
@@ -506,7 +530,7 @@ def _animate_user_typing(
             LayoutFrame(transcript=buffer, transient=[[]], composer=composer),
             theme.rows,
         )
-        frames.append((renderer.render_frame(composed), frame_ms))
+        frames.append(renderer.render_frame(composed), frame_ms)
 
     # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
     wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
@@ -526,7 +550,7 @@ def _animate_user_typing(
 def _animate_typing(
     *,
     buffer: list[StyledLine],
-    frames: list[tuple[Image.Image, int]],
+    frames: FrameStore,
     renderer: TerminalRenderer,
     text: str,
     prefix_char: str,
@@ -543,6 +567,9 @@ def _animate_typing(
     prefix_len = len(prefix)
 
     wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
+
+    # Elide long assistant messages — show head + "…" + tail
+    wrapped_lines = _elide_wrapped_lines(wrapped_lines, ASSISTANT_MESSAGE_MAX_LINES)
 
     # Build the full styled lines that will appear when typing is complete
     full_lines: list[StyledLine] = []
@@ -594,7 +621,7 @@ def _animate_typing(
             ),
             theme.rows,
         )
-        frames.append((renderer.render_frame(composed), frame_ms))
+        frames.append(renderer.render_frame(composed), frame_ms)
         frame_count += 1
 
     # Commit full lines to buffer
@@ -604,7 +631,7 @@ def _animate_typing(
 def _animate_footer_loop(
     *,
     buffer: list[StyledLine],
-    frames: list[tuple[Image.Image, int]],
+    frames: FrameStore,
     renderer: TerminalRenderer,
     theme: TerminalTheme,
     footer: StatusFooter,
@@ -626,5 +653,5 @@ def _animate_footer_loop(
             LayoutFrame(transcript=buffer, transient=transient, composer=prompt_area),
             theme.rows,
         )
-        frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
+        frames.append(renderer.render_frame(composed), SPINNER_FRAME_MS)
         footer.tick()

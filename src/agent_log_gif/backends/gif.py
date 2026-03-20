@@ -8,20 +8,30 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from PIL import Image
 
+if TYPE_CHECKING:
+    from agent_log_gif.frame_store import FrameStore
+
 
 def save_gif(
-    frames: list[tuple[Image.Image, int]],
+    frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
+    size_limit_mb: int = 50,
 ) -> Path:
     """Save frames as an animated GIF.
 
+    Streams quantization one frame at a time to avoid holding all frames
+    in memory simultaneously. Accepts a FrameStore or any iterable of
+    (PIL.Image, duration_ms) tuples.
+
     Args:
-        frames: List of (PIL.Image, duration_ms) tuples.
+        frames: FrameStore or iterable of (PIL.Image, duration_ms) tuples.
         output_path: Path to write the .gif file.
 
     Returns:
@@ -30,42 +40,64 @@ def save_gif(
     Raises:
         ValueError: If frames is empty.
     """
-    if not frames:
-        raise ValueError("Cannot create GIF from empty frame list")
-
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    images = [f[0] for f in frames]
-    durations = [f[1] for f in frames]
+    # We need durations up front for Pillow, and the first frame separately.
+    # Use FrameStore.durations() if available (avoids decompressing images),
+    # otherwise consume the iterable.
+    if hasattr(frames, "durations") and hasattr(frames, "__len__"):
+        # FrameStore path: extract durations without decompressing
+        if len(frames) == 0:
+            raise ValueError("Cannot create GIF from empty frame list")
+        durations = [max(d, 20) for d in frames.durations()]
+        frame_iter = iter(frames)
+    else:
+        # Generic iterable: materialize to get durations + first frame
+        frame_list = list(frames)
+        if not frame_list:
+            raise ValueError("Cannot create GIF from empty frame list")
+        durations = [max(d, 20) for _, d in frame_list]
+        frame_iter = iter(frame_list)
 
-    # Pillow requires minimum 20ms per frame (browser limitation)
-    durations = [max(d, 20) for d in durations]
+    # Quantize and save first frame
+    first_img, _ = next(frame_iter)
+    first_quantized = first_img.quantize(colors=256, method=2)
 
-    # Convert to palette mode for GIF (reduces file size significantly)
-    palette_images = [img.quantize(colors=256, method=2) for img in images]
+    def _quantize_rest():
+        """Generator: quantize remaining frames one at a time."""
+        for img, _ in frame_iter:
+            yield img.quantize(colors=256, method=2)
 
-    palette_images[0].save(
+    first_quantized.save(
         str(output_path),
         save_all=True,
-        append_images=palette_images[1:],
+        append_images=_quantize_rest(),
         duration=durations,
         loop=0,
         disposal=2,  # restore to background between frames
     )
 
-    # Try gifsicle optimization if available
-    _optimize_with_gifsicle(output_path)
+    # Try gifsicle optimization if available (skip for very large files)
+    _optimize_with_gifsicle(output_path, size_limit_mb=size_limit_mb)
 
     return output_path
 
 
-def _optimize_with_gifsicle(gif_path: Path) -> None:
+def _optimize_with_gifsicle(gif_path: Path, size_limit_mb: int = 50) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
     if not shutil.which("gifsicle"):
         return
 
     original_size = gif_path.stat().st_size
+    original_mb = original_size / (1024 * 1024)
+    if original_mb > size_limit_mb:
+        click.echo(
+            f"GIF is {original_mb:.0f} MB — skipping gifsicle optimization (too large). "
+            f"Consider --format mp4 for long sessions.",
+            err=True,
+        )
+        return
     optimized_path = gif_path.with_suffix(".opt.gif")
 
     try:

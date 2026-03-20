@@ -61,6 +61,12 @@ from agent_log_gif.web import (  # noqa: F401 - re-exported for backward compat
 # Default turn cap for GIF output
 DEFAULT_MAX_TURNS = 20
 
+# GIF files larger than this skip gifsicle optimization (it OOMs on huge files)
+GIFSICLE_SIZE_LIMIT_MB = 100
+
+# Warn about GIF size when session exceeds this many turns
+GIF_TURN_WARNING_THRESHOLD = 10
+
 _MEDIA_KWARG_NAMES = (
     "fmt",
     "music",
@@ -171,6 +177,14 @@ def _session_to_media(
     selected_events = [e for group in turn_groups for e in group]
     shown_turns = len(turn_groups)
 
+    if fmt == "gif" and shown_turns > GIF_TURN_WARNING_THRESHOLD:
+        click.echo(
+            f"Heads up: {shown_turns} turns will produce a large GIF. "
+            f"Consider --format mp4 or --turns {GIF_TURN_WARNING_THRESHOLD} "
+            f"for a smaller file.",
+            err=True,
+        )
+
     click.echo(
         f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
     )
@@ -228,7 +242,7 @@ def _session_to_media(
     click.echo(f"Writing {output_path}...")
 
     if fmt == "gif":
-        save_gif(frames, output_path)
+        save_gif(frames, output_path, size_limit_mb=GIFSICLE_SIZE_LIMIT_MB)
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
 
