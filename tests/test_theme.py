@@ -19,7 +19,7 @@ class TestTerminalTheme:
     def test_default_dimensions(self):
         theme = TerminalTheme()
         assert theme.cols == 80
-        assert theme.rows == 30
+        assert theme.rows == 18
         assert theme.font_size == 16
         assert theme.padding == 28
 

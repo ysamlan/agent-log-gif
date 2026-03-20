@@ -125,7 +125,7 @@ class TerminalTheme:
 
     # Terminal dimensions (characters)
     cols: int = 80
-    rows: int = 30
+    rows: int = 18
 
     # Pixel padding around terminal content
     padding: int = 28
