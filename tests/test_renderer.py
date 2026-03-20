@@ -113,6 +113,18 @@ class TestTerminalRenderer:
         assert frame.size[0] < 300
         assert frame.size[1] < 200
 
+    def test_ssaa_factor_does_not_change_output_dimensions(self):
+        """Different SSAA factors produce identical output sizes."""
+        theme = TerminalTheme(cols=80, rows=30)
+        r_15 = TerminalRenderer(theme, ssaa=1.5)
+        r_20 = TerminalRenderer(theme, ssaa=2)
+        assert r_15.image_width == r_20.image_width
+        assert r_15.image_height == r_20.image_height
+
+        frame_15 = r_15.render_frame([[("Hello", "#F8F8F2")]])
+        frame_20 = r_20.render_frame([[("Hello", "#F8F8F2")]])
+        assert frame_15.size == frame_20.size
+
     def test_highlighted_input_text_sits_higher_and_band_has_extra_bottom_room(self):
         theme = TerminalTheme(
             rows=3,
@@ -150,11 +162,14 @@ class TestTerminalRenderer:
         )
         assert min(highlighted_prompt_rows) < min(plain_prompt_rows)
 
-        line_top = (
-            renderer._ss_content_y
-            + renderer._ss_padding
-            + (theme.rows - 1) * renderer._char_height_ss
-        ) // renderer._SSAA
+        line_top = round(
+            (
+                renderer._ss_content_y
+                + renderer._ss_padding
+                + (theme.rows - 1) * renderer._char_height_ss
+            )
+            / renderer._SSAA
+        )
         selection_rows = self._rows_with_exact_color(
             highlighted,
             selection_rgb,

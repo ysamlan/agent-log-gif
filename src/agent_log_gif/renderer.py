@@ -24,46 +24,50 @@ class TerminalRenderer:
     An optional window chrome (title bar with controls) is drawn above the content.
     """
 
-    # Supersampling factor for antialiased text rendering
-    _SSAA = 2
-
     def __init__(
         self,
         theme: TerminalTheme | None = None,
         title: str = "",
         chrome: ChromeStyle = ChromeStyle.MAC,
+        ssaa: float = 2,
     ):
         self.theme = theme or TerminalTheme()
         self.title = title
         self.chrome = chrome
+        self._SSAA = ssaa
 
-        # Load fonts at 2x size for supersampled rendering
+        # Compute 1x character metrics from a 1x font so that output
+        # dimensions are identical regardless of the supersample factor.
+        font_1x = ImageFont.truetype(self.theme.font_path, self.theme.font_size)
+        bbox_1x = font_1x.getbbox("M")
+        self.char_width = int(font_1x.getlength("M"))
+        line_spacing = 4
+        self.char_height = bbox_1x[3] - bbox_1x[1] + line_spacing
+
+        # Load fonts at ss× size for supersampled rendering
         ss = self._SSAA
         self._font_ss = ImageFont.truetype(
-            self.theme.font_path, self.theme.font_size * ss
+            self.theme.font_path, round(self.theme.font_size * ss)
         )
         title_font_size = max(self.theme.font_size - 3, 10)
         self._title_font_ss = ImageFont.truetype(
-            self.theme.font_path, title_font_size * ss
+            self.theme.font_path, round(title_font_size * ss)
         )
 
-        # Compute character metrics from the supersampled font, then scale back
-        bbox = self._font_ss.getbbox("M")
+        # Use actual ss× font metrics for text positioning so glyphs
+        # don't overlap.  Output dimensions come from the 1x metrics above.
+        bbox_ss = self._font_ss.getbbox("M")
         self._char_width_ss = int(self._font_ss.getlength("M"))
-        line_spacing = 4 * ss
-        self._char_height_ss = bbox[3] - bbox[1] + line_spacing
+        line_spacing_ss = round(line_spacing * ss)
+        self._char_height_ss = bbox_ss[3] - bbox_ss[1] + line_spacing_ss
         # Line spacing sits below the glyph, so text needs a small upward
         # correction to look vertically centered in the line box.
-        self._text_nudge_ss = line_spacing // 2
+        self._text_nudge_ss = line_spacing_ss // 2
         # Highlighted user input sits a touch higher than regular terminal
         # text, with extra band padding to avoid clipped antialiasing.
-        self._highlight_text_raise_ss = ss * 2
-        self._highlight_top_pad_ss = ss * 3
-        self._highlight_bottom_pad_ss = ss * 4
-
-        # Public metrics at 1x (used by animator for text wrapping calculations)
-        self.char_width = self._char_width_ss // ss
-        self.char_height = self._char_height_ss // ss
+        self._highlight_text_raise_ss = round(ss * 2)
+        self._highlight_top_pad_ss = round(ss * 3)
+        self._highlight_bottom_pad_ss = round(ss * 5)
 
         # Compute final output dimensions (1x)
         content_width = self.theme.cols * self.char_width + 2 * self.theme.padding
@@ -78,12 +82,12 @@ class TerminalRenderer:
         self.image_height = titlebar_h + content_height
         self._content_y_offset = titlebar_h
 
-        # Internal rendering dimensions (2x)
-        self._ss_width = self.image_width * ss
-        self._ss_height = self.image_height * ss
-        self._ss_padding = self.theme.padding * ss
-        self._ss_padding_bottom = self.theme.padding_bottom * ss
-        self._ss_titlebar_h = titlebar_h * ss
+        # Internal rendering dimensions (ss×)
+        self._ss_width = round(self.image_width * ss)
+        self._ss_height = round(self.image_height * ss)
+        self._ss_padding = round(self.theme.padding * ss)
+        self._ss_padding_bottom = round(self.theme.padding_bottom * ss)
+        self._ss_titlebar_h = round(titlebar_h * ss)
         self._ss_content_y = self._ss_titlebar_h
 
         # Pre-render title bar template (background + chrome + title text)

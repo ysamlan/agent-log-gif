@@ -42,7 +42,7 @@ def draw_titlebar(
     height: int,
     titlebar_color: tuple[int, int, int],
     bg_color: tuple[int, int, int],
-    ss: int,
+    ss: int | float,
     title: str = "",
     title_font: ImageFont.FreeTypeFont | None = None,
     comment_color: tuple[int, int, int] = (98, 114, 164),
@@ -117,7 +117,7 @@ def _draw_windows_controls(
     draw: ImageDraw.Draw,
     width: int,
     titlebar_h: int,
-    ss: int,
+    ss: int | float,
     icon_color: tuple[int, int, int],
 ) -> None:
     """Draw Windows 11 style minimize/maximize/close buttons on the right.
@@ -163,7 +163,7 @@ def _draw_linux_controls(
     draw: ImageDraw.Draw,
     width: int,
     titlebar_h: int,
-    ss: int,
+    ss: int | float,
     icon_color: tuple[int, int, int],
 ) -> None:
     """Draw GNOME header bar style controls — simple glyph icons on the right."""
@@ -207,7 +207,7 @@ def _draw_title_text(
     titlebar_h: int,
     color: tuple[int, int, int],
     style: ChromeStyle,
-    ss: int,
+    ss: int | float,
 ) -> None:
     """Draw title text in the title bar."""
     bbox = font.getbbox(title)
