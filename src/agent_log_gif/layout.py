@@ -53,20 +53,3 @@ def compose_lines(frame: LayoutFrame, viewport_rows: int) -> list[StyledLine]:
         frame.transcript[-transcript_budget:] if transcript_budget > 0 else []
     )
     return visible_transcript + frame.transient + frame.composer
-
-
-def commit_with_spacing(
-    transcript: list[StyledLine],
-    lines: list[StyledLine],
-    spacing_after: int = 0,
-) -> None:
-    """Append lines to the transcript buffer with controlled spacing.
-
-    Args:
-        transcript: The transcript buffer to append to (mutated in place).
-        lines: The styled lines to append.
-        spacing_after: Number of blank lines to insert after the content.
-    """
-    transcript.extend(lines)
-    for _ in range(spacing_after):
-        transcript.append([])

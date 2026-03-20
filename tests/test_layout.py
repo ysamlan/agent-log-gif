@@ -1,10 +1,10 @@
 """Tests for the layout composition layer.
 
 Pure-data tests — no rendering, no images. Validates viewport budget
-calculation, transcript truncation, and spacing policies.
+calculation and transcript truncation.
 """
 
-from agent_log_gif.layout import LayoutFrame, commit_with_spacing, compose_lines
+from agent_log_gif.layout import LayoutFrame, compose_lines
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine
 
 
@@ -124,33 +124,3 @@ class TestComposeLines:
         # 10 - 3 (composer) = 7 budget, transcript is 5 → all fit
         assert len(result) == 8  # 5 transcript + 3 composer
         assert result[-3:] == input_lines
-
-
-class TestCommitWithSpacing:
-    def test_appends_lines(self):
-        transcript: list[StyledLine] = []
-        lines = _lines(2)
-        commit_with_spacing(transcript, lines)
-        assert transcript == lines
-
-    def test_spacing_after_adds_blanks(self):
-        transcript: list[StyledLine] = []
-        lines = _lines(1)
-        commit_with_spacing(transcript, lines, spacing_after=2)
-        assert len(transcript) == 3
-        assert transcript[0] == lines[0]
-        assert transcript[1] == []
-        assert transcript[2] == []
-
-    def test_spacing_after_zero_adds_nothing(self):
-        transcript: list[StyledLine] = []
-        lines = _lines(1)
-        commit_with_spacing(transcript, lines, spacing_after=0)
-        assert transcript == lines
-
-    def test_appends_to_existing_transcript(self):
-        transcript = _lines(3)
-        original_len = len(transcript)
-        new_lines = _lines(2)
-        commit_with_spacing(transcript, new_lines, spacing_after=1)
-        assert len(transcript) == original_len + 2 + 1  # 2 lines + 1 blank

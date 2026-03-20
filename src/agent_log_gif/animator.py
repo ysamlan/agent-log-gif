@@ -204,8 +204,7 @@ def generate_frames(
                 text_color=theme.foreground,
                 chars_per_frame=asst_chars,
                 frame_ms=asst_ms,
-                cols=theme.cols,
-                rows=theme.rows,
+                theme=theme,
                 prompt_area=prompt_area,
             )
 
@@ -330,15 +329,14 @@ def _animate_typing(
     text_color: str,
     chars_per_frame: int,
     frame_ms: int,
-    cols: int,
-    rows: int,
+    theme: TerminalTheme,
     prompt_area: list[StyledLine],
 ) -> None:
     """Add typing animation frames for a message."""
     prefix = f"{prefix_char} "
     prefix_len = len(prefix)
 
-    wrapped_lines = _wrap_text(text, cols, prefix_len)
+    wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
 
     # Build the full styled lines that will appear when typing is complete
     full_lines: list[StyledLine] = []
@@ -382,7 +380,7 @@ def _animate_typing(
             LayoutFrame(
                 transcript=buffer, transient=partial_lines, composer=prompt_area
             ),
-            rows,
+            theme.rows,
         )
         frames.append((renderer.render_frame(composed), frame_ms))
 
@@ -437,12 +435,11 @@ def _animate_spinner(
         for i in range(total_frames):
             frame_char = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
 
-            spinner_line: StyledLine = [
+            spinner_line = [
                 (f"{frame_char} ", SPINNER_COLOR),
                 (f"{verb}\u2026", SPINNER_COLOR),
                 (" (esc to interrupt)", theme.comment),
             ]
-
             composed = compose_lines(
                 LayoutFrame(
                     transcript=buffer,
