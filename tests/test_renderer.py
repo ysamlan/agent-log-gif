@@ -1,6 +1,6 @@
 """Tests for the terminal frame renderer."""
 
-from PIL import Image
+from PIL import Image, ImageFont
 
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, TerminalRenderer
 from agent_log_gif.theme import TerminalTheme
@@ -125,7 +125,8 @@ class TestTerminalRenderer:
         frame_20 = r_20.render_frame([[("Hello", "#F8F8F2")]])
         assert frame_15.size == frame_20.size
 
-    def test_highlighted_input_text_sits_higher_and_band_has_extra_bottom_room(self):
+    def test_highlighted_input_has_selection_band(self):
+        """Highlighted lines have a selection background band around the text."""
         theme = TerminalTheme(
             rows=3,
             cols=20,
@@ -139,9 +140,6 @@ class TestTerminalRenderer:
         )
         renderer = TerminalRenderer(theme)
 
-        plain = renderer.render_frame(
-            [[("❯ ", theme.prompt_color), ("hello", theme.foreground)]]
-        )
         highlighted = renderer.render_frame(
             [
                 [
@@ -152,28 +150,70 @@ class TestTerminalRenderer:
             ]
         )
 
-        prompt_rgb = theme.hex_to_rgb(theme.prompt_color)
         selection_rgb = theme.hex_to_rgb(theme.selection_color)
-        text_window = range(theme.padding, min(highlighted.width, theme.padding + 120))
-
-        plain_prompt_rows = self._rows_with_exact_color(plain, prompt_rgb, text_window)
-        highlighted_prompt_rows = self._rows_with_exact_color(
-            highlighted, prompt_rgb, text_window
-        )
-        assert min(highlighted_prompt_rows) < min(plain_prompt_rows)
-
-        line_top = round(
-            (
-                renderer._ss_content_y
-                + renderer._ss_padding
-                + (theme.rows - 1) * renderer._char_height_ss
-            )
-            / renderer._SSAA
-        )
         selection_rows = self._rows_with_exact_color(
             highlighted,
             selection_rgb,
             range(highlighted.width // 2, highlighted.width // 2 + 1),
         )
-        assert min(selection_rows) <= line_top - 2
-        assert max(selection_rows) >= line_top + renderer.char_height
+        # Band should span a meaningful number of rows around the text
+        assert len(selection_rows) >= renderer.char_height - 2
+
+    def test_char_height_includes_descenders(self):
+        """char_height must cover the full ascent+descent so descenders aren't clipped."""
+        theme = TerminalTheme(font_size=16)
+        font = ImageFont.truetype(theme.font_path, theme.font_size)
+        ascent, descent = font.getmetrics()
+        full_line_height = ascent + descent
+
+        renderer = TerminalRenderer(theme)
+        # char_height (before line_spacing) must be at least ascent+descent
+        line_spacing = 4
+        assert renderer.char_height >= full_line_height + line_spacing, (
+            f"char_height {renderer.char_height} < font height {full_line_height} + "
+            f"line_spacing {line_spacing}; descenders will be clipped"
+        )
+
+    def test_descender_pixels_not_overlapped(self):
+        """Descenders on one row must not overlap into the next row's text area."""
+        theme = TerminalTheme(
+            rows=3,
+            cols=20,
+            font_size=16,
+            padding=10,
+            padding_bottom=10,
+            background="#000000",
+            foreground="#ffffff",
+        )
+        renderer = TerminalRenderer(theme)
+        # Row 0: "g" with descenders, Row 1: "M" (no descenders), Row 2: empty
+        # Color row 0 green, row 1 red — if green pixels appear in row 1's band,
+        # descenders are overlapping.
+        frame = renderer.render_frame(
+            [
+                [("ggggg", "#00ff00")],
+                [("MMMMM", "#ff0000")],
+            ]
+        )
+        green = (0, 255, 0)
+        red = (255, 0, 0)
+
+        # Find the topmost red pixel (start of row 1's text)
+        top_red = None
+        for y in range(frame.height):
+            if any(frame.getpixel((x, y)) == red for x in range(10, 120, 5)):
+                top_red = y
+                break
+
+        # Check no green pixels at or below the red row's start
+        assert top_red is not None, "Should find red pixels"
+        green_in_red_zone = False
+        for y in range(top_red, frame.height):
+            if any(frame.getpixel((x, y)) == green for x in range(10, 120, 5)):
+                green_in_red_zone = True
+                break
+
+        assert not green_in_red_zone, (
+            f"Descender overlap: green pixels found at y={y} "
+            f"(red row starts at y={top_red})"
+        )

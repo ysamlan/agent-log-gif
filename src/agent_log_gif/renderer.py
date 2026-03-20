@@ -39,10 +39,11 @@ class TerminalRenderer:
         # Compute 1x character metrics from a 1x font so that output
         # dimensions are identical regardless of the supersample factor.
         font_1x = ImageFont.truetype(self.theme.font_path, self.theme.font_size)
-        bbox_1x = font_1x.getbbox("M")
         self.char_width = int(font_1x.getlength("M"))
         line_spacing = 4
-        self.char_height = bbox_1x[3] - bbox_1x[1] + line_spacing
+        # Use ascent+descent (not bbox of "M") so descenders aren't clipped
+        ascent_1x, descent_1x = font_1x.getmetrics()
+        self.char_height = ascent_1x + descent_1x + line_spacing
 
         # Load fonts at ss× size for supersampled rendering
         ss = self._SSAA
@@ -56,18 +57,18 @@ class TerminalRenderer:
 
         # Use actual ss× font metrics for text positioning so glyphs
         # don't overlap.  Output dimensions come from the 1x metrics above.
-        bbox_ss = self._font_ss.getbbox("M")
         self._char_width_ss = int(self._font_ss.getlength("M"))
         line_spacing_ss = round(line_spacing * ss)
-        self._char_height_ss = bbox_ss[3] - bbox_ss[1] + line_spacing_ss
+        ascent_ss, descent_ss = self._font_ss.getmetrics()
+        self._char_height_ss = ascent_ss + descent_ss + line_spacing_ss
         # Line spacing sits below the glyph, so text needs a small upward
         # correction to look vertically centered in the line box.
         self._text_nudge_ss = line_spacing_ss // 2
         # Highlighted user input sits a touch higher than regular terminal
         # text, with extra band padding to avoid clipped antialiasing.
-        self._highlight_text_raise_ss = round(ss * 2)
-        self._highlight_top_pad_ss = round(ss * 3)
-        self._highlight_bottom_pad_ss = round(ss * 5)
+        self._highlight_text_raise_ss = 0
+        self._highlight_top_pad_ss = round(ss * 4)
+        self._highlight_bottom_pad_ss = round(ss * 1)
 
         # Compute final output dimensions (1x)
         content_width = self.theme.cols * self.char_width + 2 * self.theme.padding
