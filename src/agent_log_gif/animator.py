@@ -113,6 +113,7 @@ class StatusFooter:
             return [
                 (f"{glyph} ", SPINNER_COLOR),
                 (f"{self._verb}\u2026", SPINNER_COLOR),
+                (" (esc to interrupt)", self._theme.comment),
             ]
         if self._state == "done":
             return [

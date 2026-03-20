@@ -32,6 +32,7 @@ class TestFooterPromptSeparation:
                 ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
             ],
             theme=theme,
+            thinking_verbs=["Thinking"],
         )
 
         thinking_img = frames[10][0]
@@ -41,11 +42,13 @@ class TestFooterPromptSeparation:
         def _is_near(px, target, tol=20):
             return all(abs(a - b) <= tol for a, b in zip(px, target))
 
-        # Scan a column where spinner glyph renders (x≈30)
-        x_scan = 30
+        # Scan the left region for spinner-colored pixels (bottom-up)
         spinner_bottom = None
         for y in range(thinking_img.height - 1, 0, -1):
-            if _is_near(thinking_img.getpixel((x_scan, y)), spinner_rgb, tol=60):
+            if any(
+                _is_near(thinking_img.getpixel((x, y)), spinner_rgb, tol=60)
+                for x in range(10, 200, 10)
+            ):
                 spinner_bottom = y
                 break
 
