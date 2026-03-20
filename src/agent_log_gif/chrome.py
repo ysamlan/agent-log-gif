@@ -62,19 +62,35 @@ def draw_titlebar(
     if cr > 0:
         _draw_rounded_top(draw, width, height, titlebar_color, bg_color, cr)
 
+    # Pick icon/text color that contrasts with the titlebar.
+    # If the comment color is too similar to the titlebar, derive a
+    # contrasting color instead.
+    tb_luma = (
+        0.299 * titlebar_color[0]
+        + 0.587 * titlebar_color[1]
+        + 0.114 * titlebar_color[2]
+    )
+    cm_luma = (
+        0.299 * comment_color[0] + 0.587 * comment_color[1] + 0.114 * comment_color[2]
+    )
+    if abs(tb_luma - cm_luma) > 40:
+        chrome_fg = comment_color
+    elif tb_luma > 128:
+        chrome_fg = (60, 60, 60)
+    else:
+        chrome_fg = (180, 180, 180)
+
     # Style-specific window controls
     if style in (ChromeStyle.MAC, ChromeStyle.MAC_SQUARE):
         _draw_mac_controls(draw, ss)
     elif style == ChromeStyle.WINDOWS:
-        _draw_windows_controls(draw, width, height, ss, comment_color)
+        _draw_windows_controls(draw, width, height, ss, chrome_fg)
     elif style == ChromeStyle.LINUX:
-        _draw_linux_controls(draw, width, height, ss, comment_color)
+        _draw_linux_controls(draw, width, height, ss, chrome_fg)
 
     # Title text
     if title and title_font:
-        _draw_title_text(
-            draw, title, title_font, width, height, comment_color, style, ss
-        )
+        _draw_title_text(draw, title, title_font, width, height, chrome_fg, style, ss)
 
 
 # -- macOS ----------------------------------------------------------------

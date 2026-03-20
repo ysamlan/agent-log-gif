@@ -50,7 +50,11 @@ class TerminalRenderer:
         # Compute character metrics from the supersampled font, then scale back
         bbox = self._font_ss.getbbox("M")
         self._char_width_ss = int(self._font_ss.getlength("M"))
-        self._char_height_ss = bbox[3] - bbox[1] + 4 * ss
+        line_spacing = 4 * ss
+        self._char_height_ss = bbox[3] - bbox[1] + line_spacing
+        # Line spacing sits below the glyph. To center text in highlight
+        # bands, shift text up and expand the band.
+        self._text_nudge_ss = line_spacing // 2
 
         # Public metrics at 1x (used by animator for text wrapping calculations)
         self.char_width = self._char_width_ss // ss
@@ -137,7 +141,7 @@ class TerminalRenderer:
         empty_rows_above = self.theme.rows - num_visible
 
         highlight_bg = self.theme.hex_to_rgb(self.theme.selection_color)
-        # Vertical padding for the highlight bar so text isn't flush
+        # Extra padding so the band comfortably wraps shifted text
         hl_pad = 2 * self._SSAA
 
         for row_idx, line in enumerate(visible_lines):
@@ -151,16 +155,24 @@ class TerminalRenderer:
             # Draw highlighted background for marked lines
             if any(seg == HIGHLIGHT_MARKER for seg in line):
                 draw.rectangle(
-                    [0, y - hl_pad, self._ss_width, y + self._char_height_ss + hl_pad],
+                    [
+                        0,
+                        y - self._text_nudge_ss - hl_pad,
+                        self._ss_width,
+                        y + self._char_height_ss - self._text_nudge_ss + hl_pad,
+                    ],
                     fill=highlight_bg,
                 )
 
+            # Shift text up so it's centered in the cell (not flush to top
+            # with all line spacing below)
+            text_y = y - self._text_nudge_ss
             for seg in line:
                 if seg is HIGHLIGHT_MARKER:
                     continue
                 text, color_hex = seg
                 rgb = self.theme.hex_to_rgb(color_hex)
-                draw.text((x, y), text, fill=rgb, font=self._font_ss)
+                draw.text((x, text_y), text, fill=rgb, font=self._font_ss)
                 x += len(text) * self._char_width_ss
 
         # Draw cursor block if specified
