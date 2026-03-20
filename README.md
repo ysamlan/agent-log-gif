@@ -4,9 +4,13 @@
 [![Tests](https://github.com/ysamlan/agent-log-gif/workflows/Test/badge.svg)](https://github.com/ysamlan/agent-log-gif/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/ysamlan/agent-log-gif/blob/main/LICENSE)
 
-Turn your Claude Code and Codex sessions into animated terminal replays. Share them on Reddit, Slack, or wherever.
+Turn your Claude Code and Codex sessions into animated terminal-style replay GIFs or videos. Share them on Reddit, Slack, etc.
 
 ![demo](demo.gif)
+
+Less fun but more usefully: use agent session videos to do retrospective reviews; include cool Claude demos in slide decks.
+
+Supports Claude Code and Codex sessions out of the box.
 
 <details>
 <summary>Windows chrome + Codex session</summary>
@@ -36,6 +40,12 @@ To install permanently:
 
 ```bash
 uv tool install agent-log-gif
+```
+
+Or to install as a Skill you can ask your agent to use for you:
+
+```bash
+npx skills add ysamlan/agent-log-gif
 ```
 
 ## Optional tools
