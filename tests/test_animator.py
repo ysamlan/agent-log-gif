@@ -262,3 +262,29 @@ class TestGenerateFrames:
         )
 
         assert abs(spinner_clusters[-1][0] - assistant_clusters[-1][0]) <= 3
+
+    def test_progress_callback_reports_turns(self):
+        """Progress callback fires for each turn with correct turn number."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Bye"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="See ya"),
+        ]
+        reported = []
+        generate_frames(
+            events, on_turn=lambda turn, total: reported.append((turn, total))
+        )
+        assert reported == [(1, 2), (2, 2)]
+
+    def test_progress_callback_single_turn(self):
+        """Progress callback works with a single turn."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+        ]
+        reported = []
+        generate_frames(
+            events, on_turn=lambda turn, total: reported.append((turn, total))
+        )
+        assert reported == [(1, 1)]

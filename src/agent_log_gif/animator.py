@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 import textwrap
+from collections.abc import Callable
 
 from PIL import Image
 
@@ -107,6 +108,7 @@ def generate_frames(
     speed: float = 1.0,
     spinner_time: float = 1.0,
     thinking_verbs: list[str] | None = None,
+    on_turn: Callable[[int, int], None] | None = None,
 ) -> list[tuple[Image.Image, int]]:
     """Convert replay events into animated frames.
 
@@ -159,10 +161,17 @@ def generate_frames(
         )
         return (renderer.render_frame(composed), duration)
 
+    # Turn tracking for progress reporting
+    total_turns = sum(1 for e in events if e.type == EventType.USER_MESSAGE)
+    current_turn = 0
+
     for idx, event in enumerate(events):
         next_event = events[idx + 1] if idx + 1 < len(events) else None
 
         if event.type == EventType.USER_MESSAGE:
+            current_turn += 1
+            if on_turn is not None:
+                on_turn(current_turn, total_turns)
             # User types directly on the bottom prompt line
             _animate_user_typing(
                 buffer=buffer,

@@ -61,6 +61,29 @@ from agent_log_gif.web import (  # noqa: F401 - re-exported for backward compat
 # Default turn cap for GIF output
 DEFAULT_MAX_TURNS = 20
 
+_MEDIA_KWARG_NAMES = (
+    "fmt",
+    "music",
+    "loop_music",
+    "font",
+    "chrome",
+    "color_scheme",
+    "cols",
+    "rows",
+    "font_size",
+    "show",
+    "speed",
+    "spinner_time",
+    "thinking_verbs",
+)
+
+
+def _collect_media_kwargs(turns, **kwargs):
+    """Build the shared kwargs dict for _session_to_media from Click params."""
+    result = {k: kwargs[k] for k in _MEDIA_KWARG_NAMES}
+    result["turns"] = _parse_turns(turns) if turns else None
+    return result
+
 
 def _session_to_media(
     session_path,
@@ -149,7 +172,8 @@ def _session_to_media(
     shown_turns = len(turn_groups)
 
     click.echo(
-        f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
+        f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})...",
+        nl=False,
     )
     theme_kwargs = {}
     if font:
@@ -181,12 +205,19 @@ def _session_to_media(
         anim_kwargs["spinner_time"] = spinner_time
     if thinking_verbs is not None:
         anim_kwargs["thinking_verbs"] = [v.strip() for v in thinking_verbs.split(",")]
+
+    def _report_turn(turn: int, total: int) -> None:
+        if total > 1:
+            click.echo(f" {turn}", nl=False)
+
     frames = generate_frames(
         selected_events,
         renderer=renderer,
         transcript_source=transcript_source,
+        on_turn=_report_turn,
         **anim_kwargs,
     )
+    click.echo()  # finish the progress line
 
     if not frames:
         raise click.ClickException("No frames generated.")
@@ -319,8 +350,14 @@ def _search_sessions(keyword: str, source: str | None) -> None:
             if filepath.name.startswith("agent-"):
                 continue
             try:
-                text = filepath.read_text(encoding="utf-8", errors="ignore")
-                if keyword.lower() not in text.lower():
+                needle = keyword.lower()
+                matched = False
+                with open(filepath, encoding="utf-8", errors="ignore") as fh:
+                    for line in fh:
+                        if needle in line.lower():
+                            matched = True
+                            break
+                if not matched:
                     continue
                 summary = get_session_summary(filepath)
                 if summary == "(no summary)":
@@ -409,13 +446,11 @@ def _tool_status() -> str:
     ffmpeg = "installed" if shutil.which("ffmpeg") else "not found"
     lines = [f"  gifsicle: {gifsicle}  |  ffmpeg: {ffmpeg}"]
 
-    claude_dir = Path.home() / ".claude" / "projects"
-    codex_dir = Path.home() / ".codex" / "sessions"
     sources = []
-    if claude_dir.exists():
-        sources.append("Claude Code")
-    if codex_dir.exists():
-        sources.append("Codex")
+    for src, label in [("claude", "Claude Code"), ("codex", "Codex")]:
+        folder = _session_folder(src)
+        if folder and folder.exists():
+            sources.append(label)
     if sources:
         lines.append(f"  Sessions: {', '.join(sources)}")
     else:
@@ -435,8 +470,24 @@ def cli():
     pass
 
 
-# Append tool status to help text at import time
-cli.help = cli.help.rstrip() + "\n" + _tool_status()
+class _LazyHelp:
+    """Defer tool-status computation until help text is actually displayed."""
+
+    def __init__(self, base: str):
+        self._base = base
+        self._full: str | None = None
+
+    def __str__(self) -> str:
+        if self._full is None:
+            self._full = self._base.rstrip() + "\n" + _tool_status()
+        return self._full
+
+    # Click checks truthiness and calls format_help which uses str()
+    def __bool__(self) -> bool:
+        return True
+
+
+cli.help = _LazyHelp(cli.help)
 
 
 def _media_options(fn):
@@ -674,7 +725,7 @@ def local_cmd(
         ).ask()
         if show is None:
             return
-        show = show or None  # convert empty string back to None
+        show = show or None
 
     # Determine output path
     if output is None:
@@ -684,24 +735,25 @@ def local_cmd(
         output = Path(output)
         should_open = open_browser if open_browser is not None else False
 
-    parsed_turns = _parse_turns(turns) if turns else None
     _session_to_media(
         selected,
         output,
-        turns=parsed_turns,
-        fmt=fmt,
-        music=music,
-        loop_music=loop_music,
-        font=font,
-        chrome=chrome,
-        color_scheme=color_scheme,
-        cols=cols,
-        rows=rows,
-        font_size=font_size,
-        show=show,
-        speed=speed,
-        spinner_time=spinner_time,
-        thinking_verbs=thinking_verbs,
+        **_collect_media_kwargs(
+            turns,
+            fmt=fmt,
+            music=music,
+            loop_music=loop_music,
+            font=font,
+            chrome=chrome,
+            color_scheme=color_scheme,
+            cols=cols,
+            rows=rows,
+            font_size=font_size,
+            show=show,
+            speed=speed,
+            spinner_time=spinner_time,
+            thinking_verbs=thinking_verbs,
+        ),
     )
 
     if should_open:
@@ -773,24 +825,25 @@ def json_cmd(
     if output is None:
         output = Path(json_file_path.stem + f".{fmt}")
 
-    parsed_turns = _parse_turns(turns) if turns else None
     _session_to_media(
         json_file_path,
         output,
-        turns=parsed_turns,
-        fmt=fmt,
-        music=music,
-        loop_music=loop_music,
-        font=font,
-        chrome=chrome,
-        color_scheme=color_scheme,
-        cols=cols,
-        rows=rows,
-        font_size=font_size,
-        show=show,
-        speed=speed,
-        spinner_time=spinner_time,
-        thinking_verbs=thinking_verbs,
+        **_collect_media_kwargs(
+            turns,
+            fmt=fmt,
+            music=music,
+            loop_music=loop_music,
+            font=font,
+            chrome=chrome,
+            color_scheme=color_scheme,
+            cols=cols,
+            rows=rows,
+            font_size=font_size,
+            show=show,
+            speed=speed,
+            spinner_time=spinner_time,
+            thinking_verbs=thinking_verbs,
+        ),
     )
 
     if open_browser:
