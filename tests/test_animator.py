@@ -7,6 +7,23 @@ from agent_log_gif.timeline import EventType, ReplayEvent
 
 
 class TestGenerateFrames:
+    @staticmethod
+    def _color_row_clusters(img, color, x_limit=250):
+        rows = []
+        for y in range(img.height):
+            if any(
+                img.getpixel((x, y)) == color for x in range(min(img.width, x_limit))
+            ):
+                rows.append(y)
+
+        clusters = []
+        for y in rows:
+            if clusters and y == clusters[-1][1] + 1:
+                clusters[-1] = (clusters[-1][0], y)
+            else:
+                clusters.append((y, y))
+        return clusters
+
     def test_produces_frames(self):
         """Basic events produce a non-empty frame sequence."""
         events = [
@@ -67,17 +84,18 @@ class TestGenerateFrames:
         frames = generate_frames(events)
         assert len(frames) > 0
 
-    def test_multi_turn_has_separator(self):
-        """Multiple turns have separator lines between them."""
+    def test_multi_turn_does_not_insert_separator_rule(self):
+        """Multiple turns keep spacing without an explicit separator rule."""
         events = [
-            ReplayEvent(type=EventType.USER_MESSAGE, text="First"),
-            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Response 1"),
-            ReplayEvent(type=EventType.USER_MESSAGE, text="Second"),
-            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Response 2"),
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Yo"),
         ]
         frames = generate_frames(events)
-        # Just verify it produces frames without error
-        assert len(frames) > 0
+
+        # Without an inserted divider pause, the second user turn starts
+        # typing immediately after the assistant pause.
+        assert frames[22][1] == 80
 
     def test_final_frame_held_longer(self):
         """The last frame has a longer duration for viewing."""
@@ -170,3 +188,77 @@ class TestGenerateFrames:
         frames = generate_frames(events)
         sizes = {img.size for img, _ in frames}
         assert len(sizes) == 1, f"Frames have different sizes: {sizes}"
+
+    def test_empty_prompt_line_keeps_highlight_when_idle(self):
+        """The bottom prompt remains highlighted even when no user text is present."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme(
+            rows=6, cols=40, font_size=16, padding=20, padding_bottom=28
+        )
+        frames = generate_frames(
+            [ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello")],
+            theme=theme,
+        )
+
+        frame = frames[-1][0]
+        selection_rgb = theme.hex_to_rgb(theme.selection_color)
+        bottom_band_rows = [
+            y
+            for y in range(frame.height)
+            if y > frame.height - 40
+            and frame.getpixel((frame.width // 2, y)) == selection_rgb
+        ]
+
+        assert bottom_band_rows, "Idle prompt area should still show the highlight band"
+
+    def test_second_turn_typing_does_not_shift_existing_transcript_rows(self):
+        """Existing lines stay put when the next user turn starts typing."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        frames = generate_frames(
+            [
+                ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+                ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+                ReplayEvent(type=EventType.USER_MESSAGE, text="Yo"),
+            ],
+            theme=theme,
+        )
+
+        # Frame 21 is the pause after the assistant response.
+        # Frame 22 is the first typing frame for the second user turn.
+        separator_pause = frames[21][0]
+        first_typing = frames[22][0]
+        foreground_rgb = theme.hex_to_rgb(theme.foreground)
+
+        before_clusters = self._color_row_clusters(separator_pause, foreground_rgb)
+        after_clusters = self._color_row_clusters(first_typing, foreground_rgb)
+
+        assert before_clusters[0] == after_clusters[0]
+
+    def test_assistant_response_reuses_spinner_row(self):
+        """Assistant typing starts on the same row the spinner occupied."""
+        from agent_log_gif.animator import SPINNER_COLOR
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        frames = generate_frames(
+            [
+                ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+                ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+            ],
+            theme=theme,
+        )
+
+        last_spinner = frames[19][0]
+        first_assistant = frames[20][0]
+
+        spinner_clusters = self._color_row_clusters(
+            last_spinner, theme.hex_to_rgb(SPINNER_COLOR)
+        )
+        assistant_clusters = self._color_row_clusters(
+            first_assistant, theme.hex_to_rgb(theme.foreground)
+        )
+
+        assert abs(spinner_clusters[-1][0] - assistant_clusters[-1][0]) <= 3

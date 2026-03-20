@@ -33,7 +33,6 @@ SPINNER_CYCLES = 3
 # Unicode characters
 PROMPT_CHAR = "\u276f"  # ❯
 ASSISTANT_CHAR = "\u25cf"  # ●
-SEPARATOR_CHAR = "\u2500"  # ─
 BLOCK_CHAR = "\u25c6"  # ◆ (used for tool calls and thinking)
 
 # Max lines to show for tool results and thinking blocks
@@ -149,27 +148,17 @@ def generate_frames(
     # The prompt area: a blank separator line + the ❯ prompt, always at the bottom.
     # This keeps a fixed gap between the scrolling content and the input area.
     prompt_line: StyledLine = [(f"{PROMPT_CHAR} ", theme.prompt_color)]
+    prompt_line.append(HIGHLIGHT_MARKER)
     prompt_area: list[StyledLine] = [[], prompt_line]
 
     def _snap(lines: list[StyledLine], duration: int) -> tuple[Image.Image, int]:
         """Render a frame with the prompt area (gap + ❯) at the bottom."""
         return (renderer.render_frame(lines + prompt_area), duration)
 
-    # Track turns for separator placement
-    last_event_type = None
+    for idx, event in enumerate(events):
+        next_event = events[idx + 1] if idx + 1 < len(events) else None
 
-    for event in events:
         if event.type == EventType.USER_MESSAGE:
-            # Add separator + blank line between turns
-            if last_event_type is not None:
-                buffer.append([])  # breathing room after previous message
-                separator_width = min(theme.cols - 4, 40)
-                buffer.append(
-                    [(SEPARATOR_CHAR * separator_width, theme.separator_color)]
-                )
-                buffer.append([])  # blank line after separator
-                frames.append(_snap(buffer, pause_ms))
-
             # User types directly on the bottom prompt line
             _animate_user_typing(
                 buffer=buffer,
@@ -199,8 +188,6 @@ def generate_frames(
                 verbs=verbs,
             )
 
-            last_event_type = event.type
-
         elif event.type == EventType.ASSISTANT_MESSAGE:
             # Type assistant message with ● prefix
             _animate_typing(
@@ -217,14 +204,14 @@ def generate_frames(
                 prompt_area=prompt_area,
             )
 
+            if next_event is not None and next_event.type == EventType.USER_MESSAGE:
+                buffer.append([])
+
             # Brief pause after assistant
             frames.append(_snap(buffer, pause_ms))
-            last_event_type = event.type
-
         elif event.type == EventType.TOOL_CALL:
             _snap_muted_block(buffer, f"{BLOCK_CHAR} ", event.text, theme)
             frames.append(_snap(buffer, pause_ms))
-            last_event_type = event.type
 
         elif event.type == EventType.TOOL_RESULT:
             _snap_muted_block(
@@ -236,7 +223,6 @@ def generate_frames(
                 trailing_blank=True,
             )
             frames.append(_snap(buffer, pause_ms))
-            last_event_type = event.type
 
         elif event.type == EventType.THINKING:
             _snap_muted_block(
@@ -248,7 +234,6 @@ def generate_frames(
                 trailing_blank=True,
             )
             frames.append(_snap(buffer, pause_ms))
-            last_event_type = event.type
 
     # Hold final frame a bit longer
     if frames:
@@ -307,8 +292,9 @@ def _animate_user_typing(
                 remaining = remaining[max_cont_line:]
                 input_lines.append([("  " + chunk, theme.foreground), HIGHLIGHT_MARKER])
 
-        # Content above + growing input area at bottom (no gap — it IS the input)
-        snapshot = buffer + input_lines
+        # Keep the spacer row above the input area stable while the user types,
+        # otherwise the transcript jumps when the prompt switches from idle to active.
+        snapshot = buffer + [[]] + input_lines
         frames.append((renderer.render_frame(snapshot), frame_ms))
 
     # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
@@ -439,6 +425,3 @@ def _animate_spinner(
 
             snapshot = buffer + [spinner_line] + prompt_area
             frames.append((renderer.render_frame(snapshot), SPINNER_FRAME_MS))
-
-    # Add a blank line after spinner (spinner line is not committed to buffer)
-    buffer.append([])

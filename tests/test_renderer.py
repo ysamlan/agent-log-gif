@@ -2,11 +2,22 @@
 
 from PIL import Image
 
-from agent_log_gif.renderer import TerminalRenderer
+from agent_log_gif.renderer import HIGHLIGHT_MARKER, TerminalRenderer
 from agent_log_gif.theme import TerminalTheme
 
 
 class TestTerminalRenderer:
+    @staticmethod
+    def _rows_with_exact_color(
+        frame: Image.Image, color: tuple[int, int, int], x_range: range | None = None
+    ) -> list[int]:
+        rows = []
+        for y in range(frame.height):
+            xs = x_range if x_range is not None else range(frame.width)
+            if any(frame.getpixel((x, y)) == color for x in xs):
+                rows.append(y)
+        return rows
+
     def test_creates_image_of_correct_dimensions(self):
         theme = TerminalTheme(cols=80, rows=30, font_size=16, padding=20)
         renderer = TerminalRenderer(theme)
@@ -101,3 +112,53 @@ class TestTerminalRenderer:
         frame = renderer.render_frame(lines)
         assert frame.size[0] < 300
         assert frame.size[1] < 200
+
+    def test_highlighted_input_text_sits_higher_and_band_has_extra_bottom_room(self):
+        theme = TerminalTheme(
+            rows=3,
+            cols=20,
+            font_size=16,
+            padding=10,
+            padding_bottom=10,
+            background="#000000",
+            selection_color="#444444",
+            foreground="#ffffff",
+            prompt_color="#00ffff",
+        )
+        renderer = TerminalRenderer(theme)
+
+        plain = renderer.render_frame(
+            [[("❯ ", theme.prompt_color), ("hello", theme.foreground)]]
+        )
+        highlighted = renderer.render_frame(
+            [
+                [
+                    ("❯ ", theme.prompt_color),
+                    ("hello", theme.foreground),
+                    HIGHLIGHT_MARKER,
+                ]
+            ]
+        )
+
+        prompt_rgb = theme.hex_to_rgb(theme.prompt_color)
+        selection_rgb = theme.hex_to_rgb(theme.selection_color)
+        text_window = range(theme.padding, min(highlighted.width, theme.padding + 120))
+
+        plain_prompt_rows = self._rows_with_exact_color(plain, prompt_rgb, text_window)
+        highlighted_prompt_rows = self._rows_with_exact_color(
+            highlighted, prompt_rgb, text_window
+        )
+        assert min(highlighted_prompt_rows) < min(plain_prompt_rows)
+
+        line_top = (
+            renderer._ss_content_y
+            + renderer._ss_padding
+            + (theme.rows - 1) * renderer._char_height_ss
+        ) // renderer._SSAA
+        selection_rows = self._rows_with_exact_color(
+            highlighted,
+            selection_rgb,
+            range(highlighted.width // 2, highlighted.width // 2 + 1),
+        )
+        assert min(selection_rows) <= line_top - 2
+        assert max(selection_rows) >= line_top + renderer.char_height

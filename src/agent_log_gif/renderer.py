@@ -52,9 +52,14 @@ class TerminalRenderer:
         self._char_width_ss = int(self._font_ss.getlength("M"))
         line_spacing = 4 * ss
         self._char_height_ss = bbox[3] - bbox[1] + line_spacing
-        # Line spacing sits below the glyph. To center text in highlight
-        # bands, shift text up and expand the band.
+        # Line spacing sits below the glyph, so text needs a small upward
+        # correction to look vertically centered in the line box.
         self._text_nudge_ss = line_spacing // 2
+        # Highlighted user input sits a touch higher than regular terminal
+        # text, with extra band padding to avoid clipped antialiasing.
+        self._highlight_text_raise_ss = ss * 2
+        self._highlight_top_pad_ss = ss * 3
+        self._highlight_bottom_pad_ss = ss * 4
 
         # Public metrics at 1x (used by animator for text wrapping calculations)
         self.char_width = self._char_width_ss // ss
@@ -141,8 +146,6 @@ class TerminalRenderer:
         empty_rows_above = self.theme.rows - num_visible
 
         highlight_bg = self.theme.hex_to_rgb(self.theme.selection_color)
-        # Extra padding so the band comfortably wraps shifted text
-        hl_pad = 2 * self._SSAA
 
         for row_idx, line in enumerate(visible_lines):
             x = self._ss_padding
@@ -151,22 +154,28 @@ class TerminalRenderer:
                 + self._ss_padding
                 + (empty_rows_above + row_idx) * self._char_height_ss
             )
+            has_highlight = any(seg == HIGHLIGHT_MARKER for seg in line)
 
             # Draw highlighted background for marked lines
-            if any(seg == HIGHLIGHT_MARKER for seg in line):
+            if has_highlight:
                 draw.rectangle(
                     [
                         0,
-                        y - self._text_nudge_ss - hl_pad,
+                        y - self._text_nudge_ss - self._highlight_top_pad_ss,
                         self._ss_width,
-                        y + self._char_height_ss - self._text_nudge_ss + hl_pad,
+                        y
+                        + self._char_height_ss
+                        - self._text_nudge_ss
+                        + self._highlight_bottom_pad_ss,
                     ],
                     fill=highlight_bg,
                 )
 
-            # Shift text up so it's centered in the cell (not flush to top
-            # with all line spacing below)
+            # Highlighted prompt/input lines read better with a slightly
+            # higher baseline inside the selection band.
             text_y = y - self._text_nudge_ss
+            if has_highlight:
+                text_y -= self._highlight_text_raise_ss
             for seg in line:
                 if seg is HIGHLIGHT_MARKER:
                     continue
