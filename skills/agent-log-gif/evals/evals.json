@@ -34,6 +34,54 @@
       "files": [
         "tests/sample_codex_session.jsonl"
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "I need a demo gif for my README showing Claude helping someone set up a Python project — create a fake 2-turn session where the user asks to set up a new Flask app and Claude creates the files",
+      "expected_output": "Should write a synthetic JSONL file with realistic timestamps, user message asking about Flask setup, assistant response with tool_use blocks (Write for app.py, Bash for pip install), matching tool_results, then render it with uvx agent-log-gif json",
+      "assertions": [
+        {
+          "name": "writes_jsonl_file",
+          "check": "Creates a .jsonl file with valid JSON on each line"
+        },
+        {
+          "name": "has_summary_line",
+          "check": "First line has type:summary"
+        },
+        {
+          "name": "has_user_and_assistant_messages",
+          "check": "Contains at least one type:user and one type:assistant entry"
+        },
+        {
+          "name": "has_realistic_timestamps",
+          "check": "Timestamps are ISO 8601 and spaced 5-30s apart"
+        },
+        {
+          "name": "renders_gif",
+          "check": "Runs uvx agent-log-gif json on the generated file to produce a .gif"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "create a short gif showing a coding assistant helping debug a failing test — make it look realistic with tool calls, maybe 3 turns",
+      "expected_output": "Should write a synthetic JSONL with 3 turns: user reports failing test, assistant reads the file and runs the test (tool_use), then fixes it. Should include tool_result entries. Then render to GIF with --show tools so the tool calls are visible.",
+      "assertions": [
+        {
+          "name": "writes_valid_jsonl",
+          "check": "Creates a .jsonl file where every line parses as valid JSON"
+        },
+        {
+          "name": "tool_calls_have_matching_results",
+          "check": "Every tool_use block has a corresponding tool_result with matching tool_use_id"
+        },
+        {
+          "name": "uses_show_tools_flag",
+          "check": "The uvx command includes --show tools or --show all"
+        }
+      ],
+      "files": []
     }
   ]
 }

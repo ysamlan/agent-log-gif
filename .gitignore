@@ -11,3 +11,5 @@ tmp/
 .claude/statusline-command.sh
 .vscode/settings.json
 .claude/worktrees
+skills/agent-log-gif-workspace
+.claude/settings.local.json

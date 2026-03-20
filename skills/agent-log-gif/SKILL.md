@@ -6,7 +6,9 @@ description: >
   replay of a coding session — whether they say "make a gif of my session", "animate
   that conversation", "create a terminal recording", "share a replay", or reference
   agent-log-gif directly. Also trigger when users want to find, search, or browse
-  their Claude Code or Codex sessions for visualization purposes.
+  their Claude Code or Codex sessions for visualization purposes. Can also create
+  synthetic/fictional session GIFs from scratch for demos, docs, or tutorials — if
+  the user says "make a demo gif showing X" or "create a fake session gif", use this.
 ---
 
 # agent-log-gif
@@ -121,6 +123,39 @@ uvx agent-log-gif json session.jsonl -o replay.gif --chrome linux --color-scheme
 # Interactive picker (shortcut when no search needed)
 uvx agent-log-gif
 ```
+
+## Creating synthetic sessions from scratch
+
+Users may want a GIF that illustrates a *hypothetical* conversation rather than replaying an existing session — for demos, docs, tutorials, or marketing. You can generate a JSONL file from scratch and feed it to the tool.
+
+### JSONL format
+
+Each line is a JSON object. The first line is a summary, then a stream of `user` and `assistant` messages. Here's a minimal example with a tool call:
+
+```jsonl
+{"type":"summary","summary":"Demo: adding a test"}
+{"type":"user","timestamp":"2025-01-15T10:00:00.000Z","message":{"role":"user","content":"Add a test for the login endpoint"}}
+{"type":"assistant","timestamp":"2025-01-15T10:00:08.000Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll create a test for the login endpoint."},{"type":"tool_use","id":"toolu_01","name":"Write","input":{"file_path":"tests/test_login.py","content":"def test_login():\n    response = client.post('/login', json={'user': 'admin', 'pass': 'secret'})\n    assert response.status_code == 200\n"}}]}}
+{"type":"user","timestamp":"2025-01-15T10:00:12.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"File written successfully"}]}}
+{"type":"assistant","timestamp":"2025-01-15T10:00:18.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done! The test is ready. Run pytest to verify it passes."}]}}
+```
+
+Note: tool results use `type: "user"` — this is the API protocol, not human input. The harness sends tool output back to the model as user messages.
+
+### Key rules
+
+- **Timestamps** drive the "Churned for Xs" duration display — space them realistically (5-30s between user and assistant)
+- **Tool calls** need matching `tool_result` entries with the same `tool_use_id`
+- **User messages**: plain string for typed input, or `[{"type":"tool_result",...}]` array for tool results
+- **Assistant messages**: always a content array with `{"type":"text"}` and/or `{"type":"tool_use"}` blocks
+- Tool calls and results are hidden by default — use `--show tools` or `--show all` to include them
+- Keep messages concise — long text gets elided in the animation
+
+### Workflow
+
+1. Write the JSONL to a temp file
+2. Render with `uvx agent-log-gif json <path> -o demo.gif --open`
+3. Adjust content/timing and re-render until it looks right
 
 ## Important notes
 
