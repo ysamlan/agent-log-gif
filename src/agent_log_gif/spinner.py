@@ -11,6 +11,9 @@ SPINNER_FRAMES = ["·", "✢", "✳", "∗", "✻", "✽"]
 # Spinner color — Claude's warm orange/terracotta (brand color)
 SPINNER_COLOR = "#da7756"
 
+# Tool done color — Dracula green, solid bullet when tool completes
+TOOL_DONE_COLOR = "#50FA7B"
+
 # Whimsical verbs displayed alongside the spinner
 SPINNER_VERBS = [
     "Accomplishing",

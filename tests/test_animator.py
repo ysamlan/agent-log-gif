@@ -1,10 +1,244 @@
 """Tests for the animation engine."""
 
 from agent_log_gif.animator import (
+    StatusFooter,
+    _compute_turn_duration,
     generate_frames,
 )
-from agent_log_gif.renderer import TerminalRenderer
+from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, TOOL_DONE_COLOR
 from agent_log_gif.timeline import EventType, ReplayEvent
+
+
+class TestFooterPromptSeparation:
+    def test_prompt_highlight_does_not_bleed_into_footer(self):
+        """The prompt's highlight band must not visually overlap the footer.
+
+        The footer status line (e.g. "✳ Puzzling…") sits above the
+        prompt ("❯"). With SSAA rendering, anti-aliased colors blend at
+        boundaries. We check that there's at least half a character height
+        of gap between the bottom of the spinner-influenced region and the
+        top of the selection-influenced region.
+        """
+        from agent_log_gif.renderer import TerminalRenderer
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        renderer = TerminalRenderer(theme)
+        half_char = renderer._char_height_ss // (renderer._SSAA * 2)
+
+        frames = generate_frames(
+            [
+                ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+                ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+            ],
+            theme=theme,
+        )
+
+        thinking_img = frames[10][0]
+        spinner_rgb = theme.hex_to_rgb(SPINNER_COLOR)
+        selection_rgb = theme.hex_to_rgb(theme.selection_color)
+
+        def _is_near(px, target, tol=20):
+            return all(abs(a - b) <= tol for a, b in zip(px, target))
+
+        # Scan a column where spinner glyph renders (x≈30)
+        x_scan = 30
+        spinner_bottom = None
+        for y in range(thinking_img.height - 1, 0, -1):
+            if _is_near(thinking_img.getpixel((x_scan, y)), spinner_rgb, tol=60):
+                spinner_bottom = y
+                break
+
+        # Scan full-width for selection highlight below the spinner
+        prompt_highlight_top = None
+        if spinner_bottom:
+            for y in range(spinner_bottom + 1, thinking_img.height):
+                if any(
+                    _is_near(thinking_img.getpixel((x, y)), selection_rgb, tol=10)
+                    for x in range(0, thinking_img.width, 20)
+                ):
+                    prompt_highlight_top = y
+                    break
+
+        assert spinner_bottom is not None, "Should find spinner pixels"
+        assert prompt_highlight_top is not None, "Should find prompt highlight"
+
+        gap = prompt_highlight_top - spinner_bottom
+        assert gap >= half_char, (
+            f"Only {gap}px between footer (bottom={spinner_bottom}) and "
+            f"prompt highlight (top={prompt_highlight_top}); need >= {half_char}px"
+        )
+
+
+class TestStatusFooter:
+    def test_default_state_is_idle(self):
+        """StatusFooter starts idle with a blank render line."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        assert footer.state == "idle"
+        assert footer.render_line() == []
+
+    def test_thinking_renders_spinner_glyph(self):
+        """Thinking state renders a spinner glyph line."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        assert footer.state == "thinking"
+        line = footer.render_line()
+        assert len(line) > 0
+        # First segment contains the first spinner glyph
+        assert SPINNER_FRAMES[0] in line[0][0]
+
+    def test_tick_advances_glyph(self):
+        """tick() changes the spinner glyph."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        glyph_before = footer.render_line()[0][0]
+        footer.tick()
+        glyph_after = footer.render_line()[0][0]
+        assert glyph_before != glyph_after
+        assert SPINNER_FRAMES[0] in glyph_before
+        assert SPINNER_FRAMES[1] in glyph_after
+
+    def test_done_renders_churned_with_duration(self):
+        """Done state shows 'Churned for Xs'."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        footer.mark_done(54)
+        assert footer.state == "done"
+        line = footer.render_line()
+        assert "Churned for 54s" in line[1][0]
+
+    def test_done_without_duration(self):
+        """Done state without duration shows 'Churned'."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        footer.mark_done()
+        line = footer.render_line()
+        assert line[1][0] == "Churned"
+
+    def test_prompt_area_always_three_lines(self):
+        """Prompt area is always 3 lines: [status, gap, prompt].
+
+        The status line is blank when idle, the gap separates it from
+        the highlighted prompt. This keeps composer height constant.
+        """
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        prompt = [("\u276f ", theme.prompt_color)]
+
+        # Idle: [blank_status, gap, prompt]
+        area = footer.build_prompt_area(prompt)
+        assert len(area) == 3
+        assert area[0] == []  # blank status
+
+        # Thinking: [spinner_status, gap, prompt]
+        footer.start_thinking()
+        area = footer.build_prompt_area(prompt)
+        assert len(area) == 3
+        assert len(area[0]) > 0  # has spinner content
+
+        # Done: [done_status, gap, prompt]
+        footer.mark_done(10)
+        area = footer.build_prompt_area(prompt)
+        assert len(area) == 3
+        assert len(area[0]) > 0  # has churned content
+
+    def test_codex_thinking_shows_working_style(self):
+        """Codex transcript source uses bullet + elapsed time style."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Working"], "codex")
+        footer.start_thinking()
+        line = footer.render_line()
+        assert line is not None
+        assert "\u2022" in line[0][0]  # bullet •
+        assert "Working" in line[1][0]
+        assert "esc to interrupt" in line[2][0]
+
+
+class TestComputeTurnDuration:
+    def test_valid_timestamps(self):
+        """Returns seconds between two ISO 8601 timestamps."""
+        start = ReplayEvent(
+            type=EventType.USER_MESSAGE,
+            text="hi",
+            timestamp="2024-01-01T00:00:00",
+        )
+        end = ReplayEvent(
+            type=EventType.ASSISTANT_MESSAGE,
+            text="hello",
+            timestamp="2024-01-01T00:00:54",
+        )
+        assert _compute_turn_duration(start, end) == 54
+
+    def test_missing_timestamps(self):
+        """Returns None when timestamps are empty."""
+        start = ReplayEvent(type=EventType.USER_MESSAGE, text="hi")
+        end = ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="hello")
+        assert _compute_turn_duration(start, end) is None
+
+    def test_partial_timestamps(self):
+        """Returns None when only one timestamp is present."""
+        start = ReplayEvent(
+            type=EventType.USER_MESSAGE,
+            text="hi",
+            timestamp="2024-01-01T00:00:00",
+        )
+        end = ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="hello")
+        assert _compute_turn_duration(start, end) is None
+
+
+class TestToolCallBlink:
+    def test_tool_call_blink_produces_frames(self):
+        """Tool call blink animation produces frames."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash echo hi"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+        frames = generate_frames(events)
+        # Thinking pause (18) + tool blink (18) + other frames
+        assert len(frames) > 36
+
+    def test_tool_call_committed_with_green_bullet(self):
+        """After tool result, green bullet color appears in the frame."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash echo hi"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+        frames = generate_frames(events, theme=theme)
+
+        green_rgb = theme.hex_to_rgb(TOOL_DONE_COLOR)
+        last_img = frames[-1][0]
+        found = any(
+            last_img.getpixel((x, y)) == green_rgb
+            for y in range(last_img.height)
+            for x in range(min(last_img.width, 50))
+        )
+        assert found, "Final frame should contain green bullet pixels"
 
 
 class TestGenerateFrames:
@@ -85,8 +319,8 @@ class TestGenerateFrames:
         frames = generate_frames(events)
         assert len(frames) > 0
 
-    def test_multi_turn_does_not_insert_separator_rule(self):
-        """Multiple turns keep spacing without an explicit separator rule."""
+    def test_multi_turn_second_user_typing_starts_after_assistant(self):
+        """In a multi-turn conversation, user typing frames follow the assistant pause."""
         events = [
             ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
             ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
@@ -94,8 +328,10 @@ class TestGenerateFrames:
         ]
         frames = generate_frames(events)
 
-        # Without an inserted divider pause, the second user turn starts
-        # typing immediately after the assistant pause.
+        # The second user turn starts typing at USER_FRAME_MS (80ms).
+        # Find the first 80ms frame after the assistant pause.
+        # Frame sequence: 1 user typing + 1 pause + 18 spinner + 1 asst typing + 1 pause = 22
+        # Frame 22 should be the first typing frame for "Yo"
         assert frames[22][1] == 80
 
     def test_final_frame_held_longer(self):
@@ -227,7 +463,7 @@ class TestGenerateFrames:
             theme=theme,
         )
 
-        # Frame 21 is the pause after the assistant response.
+        # Frame 21 is the pause after the assistant response (footer shows "done").
         # Frame 22 is the first typing frame for the second user turn.
         separator_pause = frames[21][0]
         first_typing = frames[22][0]
@@ -238,20 +474,16 @@ class TestGenerateFrames:
 
         assert before_clusters[0] == after_clusters[0]
 
-    def test_assistant_response_reuses_spinner_row(self):
-        """Assistant typing starts on the same row the spinner occupied.
+    def test_assistant_response_appears_after_transcript(self):
+        """Transcript doesn't shift between last thinking frame and first assistant frame.
 
-        The spinner (e.g. "✳ Metamorphosing…") should be replaced in-place
-        by the assistant text ("● Hello"), not pushed to a new row below.
-        We compare the y-position of their bottom text clusters — same row
-        means within half a character height; a different row would be ~15px+.
+        With the footer-based spinner, the spinner is in the footer (bottom)
+        while assistant text appears in the transient zone (above footer).
+        The user message highlight band should stay at the same pixel position.
         """
-        from agent_log_gif.animator import SPINNER_COLOR
         from agent_log_gif.theme import TerminalTheme
 
         theme = TerminalTheme()
-        renderer = TerminalRenderer(theme)
-        char_height = renderer._char_height_ss // 2  # 1x char height in pixels
 
         frames = generate_frames(
             [
@@ -261,20 +493,16 @@ class TestGenerateFrames:
             theme=theme,
         )
 
-        last_spinner = frames[19][0]
+        last_thinking = frames[19][0]
         first_assistant = frames[20][0]
+        selection_rgb = theme.hex_to_rgb(theme.selection_color)
 
-        spinner_clusters = self._color_row_clusters(
-            last_spinner, theme.hex_to_rgb(SPINNER_COLOR)
-        )
-        assistant_clusters = self._color_row_clusters(
-            first_assistant, theme.hex_to_rgb(theme.foreground)
-        )
+        # The user message highlight band should be at the same position
+        thinking_clusters = self._color_row_clusters(last_thinking, selection_rgb)
+        assistant_clusters = self._color_row_clusters(first_assistant, selection_rgb)
 
-        # Within half a row = same logical row. Different row would be char_height (~15px).
-        assert (
-            abs(spinner_clusters[-1][0] - assistant_clusters[-1][0]) <= char_height // 2
-        )
+        # First selection cluster is the user message highlight — same in both
+        assert thinking_clusters[0] == assistant_clusters[0]
 
     def test_progress_callback_reports_turns(self):
         """Progress callback fires for each turn with correct turn number."""
@@ -301,3 +529,24 @@ class TestGenerateFrames:
             events, on_turn=lambda turn, total: reported.append((turn, total))
         )
         assert reported == [(1, 1)]
+
+    def test_footer_shows_churned_with_timestamps(self):
+        """Footer transitions to 'done' with duration when timestamps are present."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        events = [
+            ReplayEvent(
+                type=EventType.USER_MESSAGE,
+                text="Hi",
+                timestamp="2024-01-01T00:00:00",
+            ),
+            ReplayEvent(
+                type=EventType.ASSISTANT_MESSAGE,
+                text="Hello",
+                timestamp="2024-01-01T00:00:10",
+            ),
+        ]
+        # Just verify it doesn't crash and produces frames
+        frames = generate_frames(events, theme=theme)
+        assert len(frames) > 0

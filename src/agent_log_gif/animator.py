@@ -1,7 +1,10 @@
 """Animation engine: converts replay events into a sequence of terminal frames.
 
-Produces typing animations for user/assistant messages and a braille spinner
-between them.
+See ``docs/ui-layout-model.md`` for the full layout model.
+
+Fixed height invariant: transient (1 line) + composer (3 lines) = 4 lines.
+The renderer is bottom-aligned, so the loading line and prompt are always
+pinned at the same pixel row. Only transcript content scrolls.
 """
 
 from __future__ import annotations
@@ -9,13 +12,19 @@ from __future__ import annotations
 import random
 import textwrap
 from collections.abc import Callable
+from datetime import datetime
 
 from PIL import Image
 
 from agent_log_gif.layout import LayoutFrame, compose_lines
 from agent_log_gif.parsers import truncate_text
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
-from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, SPINNER_VERBS
+from agent_log_gif.spinner import (
+    SPINNER_COLOR,
+    SPINNER_FRAMES,
+    SPINNER_VERBS,
+    TOOL_DONE_COLOR,
+)
 from agent_log_gif.theme import TerminalTheme
 from agent_log_gif.timeline import EventType, ReplayEvent
 
@@ -40,6 +49,105 @@ BLOCK_CHAR = "\u25c6"  # ◆ (used for tool calls and thinking)
 # Max lines to show for tool results and thinking blocks
 TOOL_RESULT_MAX_LINES = 4
 THINKING_MAX_LINES = 3
+
+
+class StatusFooter:
+    """Persistent loading line below transcript, above prompt.
+
+    States:
+      idle     -- before first user message (blank row)
+      thinking -- after user sends, through assistant responses + tool calls
+      done     -- after all responses/tools complete for a turn
+
+    Composer is always 3 lines: [status, gap, prompt].
+    """
+
+    def __init__(
+        self,
+        theme: TerminalTheme,
+        verbs: list[str],
+        transcript_source: str = "claude",
+    ):
+        self._theme = theme
+        self._verbs = verbs
+        self._transcript_source = transcript_source
+        self._state = "idle"
+        self._frame_idx = 0
+        self._verb = ""
+        self._done_text = ""
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    def start_thinking(self) -> None:
+        """Pick new random verb, reset frame index, state -> thinking."""
+        self._state = "thinking"
+        self._verb = random.choice(self._verbs)
+        self._frame_idx = 0
+
+    def mark_done(self, duration_s: int | None = None) -> None:
+        """State -> done. Shows 'Churned for Xs' or 'Churned'."""
+        self._state = "done"
+        if duration_s is not None:
+            self._done_text = f"Churned for {duration_s}s"
+        else:
+            self._done_text = "Churned"
+
+    def tick(self) -> None:
+        """Advance spinner glyph (call each frame during thinking)."""
+        if self._state == "thinking":
+            self._frame_idx += 1
+
+    def render_line(self) -> StyledLine:
+        """Return styled line for current state (blank when idle)."""
+        if self._state == "thinking":
+            if self._transcript_source == "codex":
+                elapsed = (self._frame_idx * SPINNER_FRAME_MS) // 1000
+                return [
+                    ("\u2022 ", self._theme.comment),
+                    (self._verb, self._theme.comment),
+                    (f" ({elapsed}s \u00b7 esc to interrupt)", self._theme.comment),
+                ]
+            glyph = SPINNER_FRAMES[self._frame_idx % len(SPINNER_FRAMES)]
+            return [
+                (f"{glyph} ", SPINNER_COLOR),
+                (f"{self._verb}\u2026", SPINNER_COLOR),
+            ]
+        if self._state == "done":
+            return [
+                ("\u273b ", self._theme.comment),
+                (self._done_text, self._theme.comment),
+            ]
+        return []
+
+    def build_prompt_area(self, prompt_line: StyledLine) -> list[StyledLine]:
+        """Return composer lines: always exactly 3 lines.
+
+        ``[status, gap, prompt]`` — the status line is blank when idle,
+        the gap separates status from the highlighted prompt line.
+        This keeps the composer height constant across all frames.
+        """
+        return [self.render_line(), [], prompt_line]
+
+
+def _compute_turn_duration(
+    start_event: ReplayEvent, end_event: ReplayEvent
+) -> int | None:
+    """Compute seconds between two events from their ISO 8601 timestamps."""
+    if not start_event.timestamp or not end_event.timestamp:
+        return None
+    try:
+        start = datetime.fromisoformat(start_event.timestamp)
+        end = datetime.fromisoformat(end_event.timestamp)
+        return max(0, int((end - start).total_seconds()))
+    except (ValueError, TypeError):
+        return None
+
+
+def _tool_done_line(text: str, theme: TerminalTheme) -> StyledLine:
+    """Styled line for a completed tool call: green ● + tool name."""
+    return [(f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR), (text, theme.comment)]
 
 
 def _wrap_text(text: str, width: int, prefix_len: int = 0) -> list[str]:
@@ -148,30 +256,60 @@ def generate_frames(
     # Persistent text buffer (list of styled lines) that grows over time
     buffer: list[StyledLine] = []
 
-    # The prompt area: a blank separator line + the ❯ prompt, always at the bottom.
-    # This keeps a fixed gap between the scrolling content and the input area.
+    # Status footer and prompt line
+    footer = StatusFooter(theme, verbs, transcript_source)
     prompt_line: StyledLine = [(f"{PROMPT_CHAR} ", theme.prompt_color)]
     prompt_line.append(HIGHLIGHT_MARKER)
-    prompt_area: list[StyledLine] = [[], prompt_line]
 
     def _snap(lines: list[StyledLine], duration: int) -> tuple[Image.Image, int]:
-        """Render a frame with the prompt area (gap + ❯) at the bottom."""
+        """Render a frame with the pinned bottom area.
+
+        Transient placeholder keeps fixed height = 4 (1 transient + 3
+        composer) across all frames, preventing vertical jumps.
+        """
         composed = compose_lines(
-            LayoutFrame(transcript=lines, composer=prompt_area), theme.rows
+            LayoutFrame(
+                transcript=lines,
+                transient=[[]],
+                composer=footer.build_prompt_area(prompt_line),
+            ),
+            theme.rows,
         )
         return (renderer.render_frame(composed), duration)
 
     # Turn tracking for progress reporting
     total_turns = sum(1 for e in events if e.type == EventType.USER_MESSAGE)
     current_turn = 0
+    turn_start_event: ReplayEvent | None = None
+    pending_tool_text: str | None = None
 
     for idx, event in enumerate(events):
         next_event = events[idx + 1] if idx + 1 < len(events) else None
+
+        # Commit pending tool call if next event isn't TOOL_RESULT
+        if pending_tool_text is not None and event.type != EventType.TOOL_RESULT:
+            buffer.append(_tool_done_line(pending_tool_text, theme))
+            pending_tool_text = None
 
         if event.type == EventType.USER_MESSAGE:
             current_turn += 1
             if on_turn is not None:
                 on_turn(current_turn, total_turns)
+
+            # If footer is still thinking from a previous turn that ended
+            # without an ASSISTANT_MESSAGE (e.g. ended with TOOL_RESULT),
+            # mark it done before the next user starts typing.
+            if footer.state == "thinking" and turn_start_event is not None:
+                prev_event = events[idx - 1] if idx > 0 else None
+                duration = (
+                    _compute_turn_duration(turn_start_event, prev_event)
+                    if prev_event
+                    else None
+                )
+                footer.mark_done(duration)
+
+            turn_start_event = event
+
             # User types directly on the bottom prompt line
             _animate_user_typing(
                 buffer=buffer,
@@ -179,6 +317,7 @@ def generate_frames(
                 renderer=renderer,
                 text=event.text,
                 theme=theme,
+                footer=footer,
                 chars_per_frame=user_chars,
                 frame_ms=user_ms,
             )
@@ -186,19 +325,21 @@ def generate_frames(
             # Blank line after user message before spinner/response
             buffer.append([])
 
+            # Transition footer to thinking
+            footer.start_thinking()
+
             # Pause after user message
             frames.append(_snap(buffer, pause_ms))
 
-            # Spinner animation
-            _animate_spinner(
+            # Thinking pause animation (spinner in footer)
+            _animate_footer_loop(
                 buffer=buffer,
                 frames=frames,
                 renderer=renderer,
                 theme=theme,
-                prompt_area=prompt_area,
-                transcript_source=transcript_source,
+                footer=footer,
+                prompt_line=prompt_line,
                 cycles=spin_cycles,
-                verbs=verbs,
             )
 
         elif event.type == EventType.ASSISTANT_MESSAGE:
@@ -214,19 +355,50 @@ def generate_frames(
                 chars_per_frame=asst_chars,
                 frame_ms=asst_ms,
                 theme=theme,
-                prompt_area=prompt_area,
+                footer=footer,
+                prompt_line=prompt_line,
             )
 
-            if next_event is not None and next_event.type == EventType.USER_MESSAGE:
+            if next_event is None or next_event.type == EventType.USER_MESSAGE:
+                duration = (
+                    _compute_turn_duration(turn_start_event, event)
+                    if turn_start_event
+                    else None
+                )
+                footer.mark_done(duration)
                 buffer.append([])
 
             # Brief pause after assistant
             frames.append(_snap(buffer, pause_ms))
+
         elif event.type == EventType.TOOL_CALL:
-            _snap_muted_block(buffer, f"{BLOCK_CHAR} ", event.text, theme)
-            frames.append(_snap(buffer, pause_ms))
+            pending_tool_text = event.text
+            tool_text = event.text
+
+            def _blink_transient(i: int) -> list[StyledLine]:
+                color = theme.comment if (i // 3) % 2 == 0 else theme.background
+                return [[(f"{ASSISTANT_CHAR} ", color), (tool_text, theme.comment)]]
+
+            _animate_footer_loop(
+                buffer=buffer,
+                frames=frames,
+                renderer=renderer,
+                theme=theme,
+                footer=footer,
+                prompt_line=prompt_line,
+                cycles=spin_cycles,
+                transient_fn=_blink_transient,
+            )
 
         elif event.type == EventType.TOOL_RESULT:
+            if pending_tool_text is not None:
+                buffer.append(
+                    [
+                        (f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR),
+                        (pending_tool_text, theme.comment),
+                    ]
+                )
+                pending_tool_text = None
             _snap_muted_block(
                 buffer,
                 "    ",
@@ -248,6 +420,24 @@ def generate_frames(
             )
             frames.append(_snap(buffer, pause_ms))
 
+    # Commit any remaining pending tool call
+    if pending_tool_text is not None:
+        buffer.append(
+            [
+                (f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR),
+                (pending_tool_text, theme.comment),
+            ]
+        )
+
+    # If footer is still thinking, mark done
+    if footer.state == "thinking":
+        duration = (
+            _compute_turn_duration(turn_start_event, events[-1])
+            if turn_start_event and events
+            else None
+        )
+        footer.mark_done(duration)
+
     # Hold final frame a bit longer
     if frames:
         last_img, _ = frames[-1]
@@ -263,15 +453,18 @@ def _animate_user_typing(
     renderer: TerminalRenderer,
     text: str,
     theme: TerminalTheme,
+    footer: StatusFooter,
     chars_per_frame: int = USER_CHARS_PER_FRAME,
     frame_ms: int = USER_FRAME_MS,
 ) -> None:
     """Animate user typing on the bottom prompt line, then 'send' it to the buffer.
 
-    The user types directly on the ❯ line at the bottom. The input area
+    The user types directly on the input line at the bottom. The input area
     grows (wraps to additional lines) as text exceeds the terminal width,
     pushing the content above upward. When typing completes, the text
     moves up into the buffer and the input area shrinks back to one line.
+
+    On turns 2+, the footer shows "Churned for Xs" from the previous turn.
     """
     prefix = f"{PROMPT_CHAR} "
     prefix_len = len(prefix)
@@ -305,10 +498,12 @@ def _animate_user_typing(
                 remaining = remaining[max_cont_line:]
                 input_lines.append([("  " + chunk, theme.foreground), HIGHLIGHT_MARKER])
 
-        # The spacer + input lines form the composer during typing,
-        # keeping the transcript stable above.
+        # Composer: [status, gap, input_lines...] — input replaces the prompt.
+        # Transient placeholder is the gap between transcript and pinned area.
+        composer = [footer.render_line(), []] + input_lines
         composed = compose_lines(
-            LayoutFrame(transcript=buffer, composer=[[]] + input_lines), theme.rows
+            LayoutFrame(transcript=buffer, transient=[[]], composer=composer),
+            theme.rows,
         )
         frames.append((renderer.render_frame(composed), frame_ms))
 
@@ -339,9 +534,10 @@ def _animate_typing(
     chars_per_frame: int,
     frame_ms: int,
     theme: TerminalTheme,
-    prompt_area: list[StyledLine],
+    footer: StatusFooter,
+    prompt_line: StyledLine,
 ) -> None:
-    """Add typing animation frames for a message."""
+    """Add typing animation frames for a message, ticking the footer spinner."""
     prefix = f"{prefix_char} "
     prefix_len = len(prefix)
 
@@ -364,6 +560,7 @@ def _animate_typing(
 
     # Generate frames at intervals
     chars_typed = 0
+    frame_count = 0
     while chars_typed < total_chars:
         chars_typed = min(chars_typed + chars_per_frame, total_chars)
 
@@ -384,7 +581,12 @@ def _animate_typing(
             else:
                 partial_lines.append([("  " + visible_text, text_color)])
 
-        # Render with partial content as transient + composer at bottom
+        # Tick footer periodically (~every 3 frames to approximate SPINNER_FRAME_MS)
+        if frame_count % 3 == 0:
+            footer.tick()
+
+        # Render with partial content as transient + dynamic composer at bottom
+        prompt_area = footer.build_prompt_area(prompt_line)
         composed = compose_lines(
             LayoutFrame(
                 transcript=buffer, transient=partial_lines, composer=prompt_area
@@ -392,69 +594,36 @@ def _animate_typing(
             theme.rows,
         )
         frames.append((renderer.render_frame(composed), frame_ms))
+        frame_count += 1
 
     # Commit full lines to buffer
     buffer.extend(full_lines)
 
 
-def _animate_spinner(
+def _animate_footer_loop(
     *,
     buffer: list[StyledLine],
     frames: list[tuple[Image.Image, int]],
     renderer: TerminalRenderer,
     theme: TerminalTheme,
-    prompt_area: list[StyledLine],
-    transcript_source: str = "claude",
+    footer: StatusFooter,
+    prompt_line: StyledLine,
     cycles: int = SPINNER_CYCLES,
-    verbs: list[str] | None = None,
+    transient_fn: Callable[[int], list[StyledLine]] | None = None,
 ) -> None:
-    """Add spinner animation frames between user and assistant messages.
+    """Run a spinner loop with the footer ticking each frame.
 
-    Claude Code: star character cycles through 6 glyphs in brand orange,
-    with a random whimsical verb.
-    Codex: static bullet with "Working…" and elapsed time, no animation.
+    Shared implementation for thinking pauses (empty transient) and tool
+    call blinks (blinking bullet in transient). ``transient_fn(i)`` returns
+    the transient lines for frame *i*; defaults to a gap placeholder.
     """
-    if transcript_source == "codex":
-        # Codex style: "• Working (Xs · esc to interrupt)" — static, no animation
-        # Use custom verbs if provided, otherwise just "Working"
-        codex_verb = random.choice(verbs) if verbs is not None else "Working"
-        total_frames = cycles * len(SPINNER_FRAMES)
-        for i in range(total_frames):
-            elapsed = (i * SPINNER_FRAME_MS) // 1000
-            spinner_line: StyledLine = [
-                ("• ", theme.comment),
-                (codex_verb, theme.comment),
-                (f" ({elapsed}s · esc to interrupt)", theme.comment),
-            ]
-            composed = compose_lines(
-                LayoutFrame(
-                    transcript=buffer,
-                    transient=[spinner_line],
-                    composer=prompt_area,
-                ),
-                theme.rows,
-            )
-            frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
-    else:
-        # Claude Code style: cycling star + random verb in brand orange
-        verb_list = verbs if verbs is not None else SPINNER_VERBS
-        verb = random.choice(verb_list)
-        total_frames = len(SPINNER_FRAMES) * cycles
-
-        for i in range(total_frames):
-            frame_char = SPINNER_FRAMES[i % len(SPINNER_FRAMES)]
-
-            spinner_line = [
-                (f"{frame_char} ", SPINNER_COLOR),
-                (f"{verb}\u2026", SPINNER_COLOR),
-                (" (esc to interrupt)", theme.comment),
-            ]
-            composed = compose_lines(
-                LayoutFrame(
-                    transcript=buffer,
-                    transient=[spinner_line],
-                    composer=prompt_area,
-                ),
-                theme.rows,
-            )
-            frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
+    total_frames = len(SPINNER_FRAMES) * cycles
+    for i in range(total_frames):
+        transient = transient_fn(i) if transient_fn else [[]]
+        prompt_area = footer.build_prompt_area(prompt_line)
+        composed = compose_lines(
+            LayoutFrame(transcript=buffer, transient=transient, composer=prompt_area),
+            theme.rows,
+        )
+        frames.append((renderer.render_frame(composed), SPINNER_FRAME_MS))
+        footer.tick()
