@@ -172,8 +172,7 @@ def _session_to_media(
     shown_turns = len(turn_groups)
 
     click.echo(
-        f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})...",
-        nl=False,
+        f"Generating animation ({shown_turns} turn{'s' if shown_turns != 1 else ''})..."
     )
     theme_kwargs = {}
     if font:
@@ -206,9 +205,14 @@ def _session_to_media(
     if thinking_verbs is not None:
         anim_kwargs["thinking_verbs"] = [v.strip() for v in thinking_verbs.split(",")]
 
+    bar_width = 20
+
     def _report_turn(turn: int, total: int) -> None:
-        if total > 1:
-            click.echo(f" {turn}", nl=False)
+        if total <= 1:
+            return
+        filled = bar_width * turn // total
+        bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
+        click.echo(f"\r  {bar} {turn}/{total}", nl=turn == total)
 
     frames = generate_frames(
         selected_events,
@@ -217,7 +221,6 @@ def _session_to_media(
         on_turn=_report_turn,
         **anim_kwargs,
     )
-    click.echo()  # finish the progress line
 
     if not frames:
         raise click.ClickException("No frames generated.")
