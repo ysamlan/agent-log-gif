@@ -56,15 +56,25 @@ class FrameStore:
         return self._decompress(data, w, h), dur
 
     def __setitem__(self, idx: int, value: tuple[Image.Image, int]) -> None:
-        """Replace a frame by index (used for final-frame duration adjustment)."""
+        """Replace a frame by index."""
         img, duration_ms = value
         compressed, w, h = self._compress(img)
         self._frames[idx] = (compressed, duration_ms, w, h)
+
+    def set_duration(self, idx: int, duration_ms: int) -> None:
+        """Change a frame's duration without decompressing/recompressing."""
+        data, _, w, h = self._frames[idx]
+        self._frames[idx] = (data, duration_ms, w, h)
 
     def __iter__(self) -> Iterator[tuple[Image.Image, int]]:
         """Yield (Image, duration_ms) tuples, decompressing one at a time."""
         for data, dur, w, h in self._frames:
             yield self._decompress(data, w, h), dur
+
+    def raw_iter(self) -> Iterator[tuple[bytes, int]]:
+        """Yield (raw_rgb_bytes, duration_ms) without PIL reconstruction."""
+        for data, dur, _, _ in self._frames:
+            yield zlib.decompress(data), dur
 
     def durations(self) -> list[int]:
         """Return list of all frame durations without decompressing images."""

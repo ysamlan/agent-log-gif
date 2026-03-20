@@ -5,15 +5,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from conftest import make_frame
 
 from agent_log_gif.backends.audio import mix_audio
 from agent_log_gif.backends.video import save_mp4
-
-
-def _make_frame(color, duration_ms=100):
-    img = Image.new("RGB", (100, 100), color)
-    return (img, duration_ms)
 
 
 def _make_test_audio(path: Path, duration_secs: float = 5.0):
@@ -42,7 +37,7 @@ class TestMixAudio:
     def test_mixes_audio_into_video(self, tmp_path):
         """Audio is mixed into the video file."""
         # Create a short test video
-        frames = [_make_frame("red", 500)] * 5
+        frames = [make_frame("red", 500)] * 5
         video_path = tmp_path / "video.mp4"
         save_mp4(frames, video_path)
 
@@ -60,7 +55,7 @@ class TestMixAudio:
 
     def test_loop_audio(self, tmp_path):
         """--loop-music doesn't crash when audio is shorter than video."""
-        frames = [_make_frame("red", 500)] * 10  # ~5 seconds of video
+        frames = [make_frame("red", 500)] * 10  # ~5 seconds of video
         video_path = tmp_path / "video.mp4"
         save_mp4(frames, video_path)
 
@@ -78,7 +73,7 @@ class TestMixAudio:
             mix_audio(tmp_path / "nope.mp4", audio_path, tmp_path / "out.mp4")
 
     def test_missing_audio_raises(self, tmp_path):
-        frames = [_make_frame("red")]
+        frames = [make_frame("red")]
         video_path = tmp_path / "video.mp4"
         save_mp4(frames, video_path)
         with pytest.raises(FileNotFoundError, match="Music"):

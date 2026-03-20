@@ -10,30 +10,11 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from PIL import Image
 
 from agent_log_gif.backends import check_ffmpeg
-
-if TYPE_CHECKING:
-    from agent_log_gif.frame_store import FrameStore
-
-
-def _frames_to_fixed_fps(
-    frames: Iterable[tuple[Image.Image, int]], fps: int = 15
-) -> list[Image.Image]:
-    """Convert variable-duration frames to fixed-fps frame sequence.
-
-    Each source frame is repeated enough times to approximate its duration
-    at the target fps.
-    """
-    ms_per_frame = 1000 / fps
-    result = []
-    for img, duration_ms in frames:
-        count = max(1, round(duration_ms / ms_per_frame))
-        result.extend([img] * count)
-    return result
+from agent_log_gif.frame_store import FrameStore
 
 
 def _encode_video(
@@ -57,22 +38,21 @@ def _encode_video(
         Path to the written video file.
     """
     # Get image size and validate non-empty
-    if hasattr(frames, "image_size") and hasattr(frames, "__len__"):
+    use_raw = isinstance(frames, FrameStore)
+    if use_raw:
         if len(frames) == 0:
             raise ValueError("Cannot create video from empty frame list")
         width, height = frames.image_size
     else:
         # Peek at first frame for dimensions
+        import itertools
+
         frame_iter = iter(frames)
         try:
             first_img, first_dur = next(frame_iter)
         except StopIteration:
             raise ValueError("Cannot create video from empty frame list")
         width, height = first_img.size
-
-        # Chain the first frame back in
-        import itertools
-
         frames = itertools.chain([(first_img, first_dur)], frame_iter)
 
     check_ffmpeg()
@@ -102,9 +82,11 @@ def _encode_video(
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # Stream frames inline: expand variable durations to fixed fps on the fly
-    for img, duration_ms in frames:
+    # Use raw_iter for FrameStore to skip PIL round-trip (zlib → raw bytes directly)
+    frame_source = frames.raw_iter() if use_raw else frames
+    for raw_or_img, duration_ms in frame_source:
         count = max(1, round(duration_ms / ms_per_frame))
-        raw = img.tobytes()
+        raw = raw_or_img if use_raw else raw_or_img.tobytes()
         for _ in range(count):
             proc.stdin.write(raw)
 

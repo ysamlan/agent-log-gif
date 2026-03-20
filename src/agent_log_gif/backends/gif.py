@@ -10,13 +10,11 @@ import shutil
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 from PIL import Image
 
-if TYPE_CHECKING:
-    from agent_log_gif.frame_store import FrameStore
+from agent_log_gif.frame_store import FrameStore
 
 
 def save_gif(
@@ -46,7 +44,7 @@ def save_gif(
     # We need durations up front for Pillow, and the first frame separately.
     # Use FrameStore.durations() if available (avoids decompressing images),
     # otherwise consume the iterable.
-    if hasattr(frames, "durations") and hasattr(frames, "__len__"):
+    if isinstance(frames, FrameStore):
         # FrameStore path: extract durations without decompressing
         if len(frames) == 0:
             raise ValueError("Cannot create GIF from empty frame list")

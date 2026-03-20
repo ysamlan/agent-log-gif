@@ -105,3 +105,20 @@ class TestFrameStore:
     def test_image_size_none_when_empty(self):
         store = FrameStore()
         assert store.image_size is None
+
+    def test_set_duration_changes_only_duration(self):
+        store = FrameStore()
+        store.append(_make_img("red"), 100)
+        store.set_duration(0, 2000)
+        img, dur = store[0]
+        assert dur == 2000
+        assert img.getpixel((0, 0)) == (255, 0, 0)
+
+    def test_raw_iter_yields_bytes(self):
+        store = FrameStore()
+        orig = _make_img("red")
+        store.append(orig, 100)
+        raw_bytes, dur = next(store.raw_iter())
+        assert dur == 100
+        assert isinstance(raw_bytes, bytes)
+        assert raw_bytes == orig.tobytes()

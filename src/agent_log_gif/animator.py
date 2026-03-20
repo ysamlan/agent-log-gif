@@ -459,8 +459,7 @@ def generate_frames(
 
     # Hold final frame a bit longer
     if frames:
-        last_img, _ = frames[-1]
-        frames[-1] = (last_img, 2000)
+        frames.set_duration(-1, 2000)
 
     return frames
 
@@ -490,17 +489,18 @@ def _animate_user_typing(
     max_first_line = theme.cols - prefix_len
     max_cont_line = theme.cols - 2  # continuation indent
 
-    # Elide long user messages (e.g. pasted logs) — wrap first, then elide
-    pre_wrapped = _wrap_text(text, theme.cols, prefix_len)
-    if len(pre_wrapped) > USER_MESSAGE_MAX_LINES:
-        elided = _elide_wrapped_lines(pre_wrapped, USER_MESSAGE_MAX_LINES)
-        text = "\n".join(elided)
+    # Wrap once, elide if needed — reuse for both typing animation and buffer commit
+    wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
+    wrapped_lines = _elide_wrapped_lines(wrapped_lines, USER_MESSAGE_MAX_LINES)
+
+    # Flatten wrapped lines into a single string for progressive typing
+    flat_text = "\n".join(wrapped_lines)
 
     # Progressive typing — input area grows as text wraps
     chars_typed = 0
-    while chars_typed < len(text):
-        chars_typed = min(chars_typed + chars_per_frame, len(text))
-        visible = text[:chars_typed]
+    while chars_typed < len(flat_text):
+        chars_typed = min(chars_typed + chars_per_frame, len(flat_text))
+        visible = flat_text[:chars_typed]
 
         # Wrap the visible text into input area lines (all highlighted)
         input_lines: list[StyledLine] = []
@@ -532,8 +532,7 @@ def _animate_user_typing(
         )
         frames.append(renderer.render_frame(composed), frame_ms)
 
-    # "Send" — move the completed text into the buffer with wrapped lines (all highlighted)
-    wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
+    # "Send" — move the completed text into the buffer (reuse wrapped_lines)
     for i, line_text in enumerate(wrapped_lines):
         if i == 0:
             buffer.append(
