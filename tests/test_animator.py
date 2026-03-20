@@ -6,7 +6,15 @@ from agent_log_gif.animator import (
     _elide_wrapped_lines,
     generate_frames,
 )
-from agent_log_gif.spinner import SPINNER_COLOR, SPINNER_FRAMES, TOOL_DONE_COLOR
+from agent_log_gif.spinner import (
+    CLAUDE_SHIMMER,
+    CODEX_SHIMMER,
+    SPINNER_COLOR,
+    SPINNER_FRAMES,
+    TOOL_DONE_COLOR,
+    blend_hex,
+    shimmer_styled_segments,
+)
 from agent_log_gif.timeline import EventType, ReplayEvent
 
 
@@ -164,7 +172,7 @@ class TestStatusFooter:
         assert len(area[0]) > 0  # has churned content
 
     def test_codex_thinking_shows_working_style(self):
-        """Codex transcript source uses bullet + elapsed time style."""
+        """Codex transcript source uses bullet + shimmered verb + suffix."""
         from agent_log_gif.theme import TerminalTheme
 
         theme = TerminalTheme()
@@ -173,8 +181,173 @@ class TestStatusFooter:
         line = footer.render_line()
         assert line is not None
         assert "\u2022" in line[0][0]  # bullet •
-        assert "Working" in line[1][0]
-        assert "esc to interrupt" in line[2][0]
+        # Verb may be split across shimmer segments; check concatenated middle
+        middle_text = "".join(seg[0] for seg in line[1:-1])
+        assert "Working" in middle_text
+        assert "esc to interrupt" in line[-1][0]
+
+
+class TestBlendHex:
+    def test_t_zero_returns_first_color(self):
+        assert blend_hex("#ff0000", "#0000ff", 0.0) == "#ff0000"
+
+    def test_t_one_returns_second_color(self):
+        assert blend_hex("#ff0000", "#0000ff", 1.0) == "#0000ff"
+
+    def test_midpoint_blend(self):
+        from agent_log_gif.theme import TerminalTheme
+
+        result = blend_hex("#000000", "#ffffff", 0.5)
+        r, g, b = TerminalTheme.hex_to_rgb(result)
+        assert 126 <= r <= 128
+        assert 126 <= g <= 128
+        assert 126 <= b <= 128
+
+    def test_clamps_above_one(self):
+        assert blend_hex("#000000", "#ffffff", 1.5) == blend_hex("#000000", "#ffffff", 1.0)
+
+    def test_clamps_below_zero(self):
+        assert blend_hex("#000000", "#ffffff", -0.5) == blend_hex("#000000", "#ffffff", 0.0)
+
+
+class TestShimmerStyledSegments:
+    def test_empty_text_returns_empty(self):
+        result = shimmer_styled_segments("", CODEX_SHIMMER, 0, "#6272a4")
+        assert result == []
+
+    def test_segments_cover_full_text(self):
+        text = "Working"
+        segs = shimmer_styled_segments(text, CODEX_SHIMMER, 500, "#6272a4")
+        assert "".join(s[0] for s in segs) == text
+        for _, color in segs:
+            assert color.startswith("#")
+            assert len(color) == 7
+
+    def test_deterministic(self):
+        a = shimmer_styled_segments("Test", CODEX_SHIMMER, 1000, "#6272a4")
+        b = shimmer_styled_segments("Test", CODEX_SHIMMER, 1000, "#6272a4")
+        assert a == b
+
+    def test_different_elapsed_different_colors(self):
+        colors_0 = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 0, "#6272a4")]
+        colors_1 = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 500, "#6272a4")]
+        assert colors_0 != colors_1
+
+    def test_codex_and_claude_differ(self):
+        codex = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 500, "#6272a4")]
+        claude = [c for _, c in shimmer_styled_segments("Working", CLAUDE_SHIMMER, 500)]
+        assert codex != claude
+
+    def test_shimmer_visible_at_peak(self):
+        """At peak position, at least one char differs from base color."""
+        # For "Working" (7 chars), Codex period = 7+20 = 27, sweep = 2.0s
+        # Want pos ≈ padding + 3 = 13 → elapsed = 13/27 * 2000 ≈ 963ms
+        segs = shimmer_styled_segments("Working", CODEX_SHIMMER, 963, "#6272a4")
+        all_colors = []
+        for text, color in segs:
+            all_colors.extend([color] * len(text))
+        assert any(c != "#6272a4" for c in all_colors)
+
+
+class TestShimmerFooterIntegration:
+    def test_codex_shimmer_varies_across_frames(self):
+        """Codex footer produces different colors across consecutive frames."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Working"], "codex")
+        footer.start_thinking()
+
+        color_sets = []
+        for _ in range(10):
+            line = footer.render_line()
+            verb_colors = tuple(seg[1] for seg in line[1:-1])
+            color_sets.append(verb_colors)
+            footer.tick()
+        assert len(set(color_sets)) > 1
+
+    def test_claude_shimmer_varies_across_frames(self):
+        """Claude footer produces different colors across consecutive frames."""
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+
+        color_sets = []
+        for _ in range(10):
+            line = footer.render_line()
+            shimmer_colors = tuple(seg[1] for seg in line[:-1])
+            color_sets.append(shimmer_colors)
+            footer.tick()
+        assert len(set(color_sets)) > 1
+
+    def test_codex_suffix_not_shimmered(self):
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Working"], "codex")
+        footer.start_thinking()
+        for _ in range(15):
+            line = footer.render_line()
+            assert line[-1][1] == theme.comment
+            assert "esc to interrupt" in line[-1][0]
+            footer.tick()
+
+    def test_claude_suffix_not_shimmered(self):
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        for _ in range(15):
+            line = footer.render_line()
+            assert line[-1][1] == theme.comment
+            assert "esc to interrupt" in line[-1][0]
+            footer.tick()
+
+    def test_codex_segment_text_covers_full_line(self):
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Working"], "codex")
+        footer.start_thinking()
+        line = footer.render_line()
+        full_text = "".join(seg[0] for seg in line)
+        assert "\u2022 " in full_text
+        assert "Working" in full_text
+        assert "esc to interrupt" in full_text
+
+    def test_claude_segment_text_covers_full_line(self):
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        footer = StatusFooter(theme, ["Thinking"], "claude")
+        footer.start_thinking()
+        line = footer.render_line()
+        full_text = "".join(seg[0] for seg in line)
+        assert SPINNER_FRAMES[0] in full_text
+        assert "Thinking" in full_text
+        assert "esc to interrupt" in full_text
+
+    def test_no_shimmer_flat_colors(self):
+        """With shimmer=False, footer uses flat colors (no per-char variation)."""
+        from agent_log_gif.spinner import SPINNER_COLOR
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme()
+        # Claude: all non-suffix segments should share SPINNER_COLOR
+        footer = StatusFooter(theme, ["Thinking"], "claude", shimmer=False)
+        footer.start_thinking()
+        line = footer.render_line()
+        for seg_text, seg_color in line[:-1]:
+            assert seg_color == SPINNER_COLOR
+        # Codex: all non-suffix segments should share theme.comment
+        footer = StatusFooter(theme, ["Working"], "codex", shimmer=False)
+        footer.start_thinking()
+        line = footer.render_line()
+        for seg_text, seg_color in line[:-1]:
+            assert seg_color == theme.comment
 
 
 class TestComputeTurnDuration:

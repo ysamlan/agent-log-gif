@@ -19,10 +19,14 @@ from agent_log_gif.layout import LayoutFrame, compose_lines
 from agent_log_gif.parsers import truncate_text
 from agent_log_gif.renderer import HIGHLIGHT_MARKER, StyledLine, TerminalRenderer
 from agent_log_gif.spinner import (
+    CLAUDE_SHIMMER,
+    CODEX_SHIMMER,
     SPINNER_COLOR,
     SPINNER_FRAMES,
     SPINNER_VERBS,
     TOOL_DONE_COLOR,
+    ShimmerProfile,
+    shimmer_styled_segments,
 )
 from agent_log_gif.theme import TerminalTheme
 from agent_log_gif.timeline import EventType, ReplayEvent
@@ -70,10 +74,12 @@ class StatusFooter:
         theme: TerminalTheme,
         verbs: list[str],
         transcript_source: str = "claude",
+        shimmer: bool = True,
     ):
         self._theme = theme
         self._verbs = verbs
         self._transcript_source = transcript_source
+        self._shimmer = shimmer
         self._state = "idle"
         self._frame_idx = 0
         self._verb = ""
@@ -102,22 +108,39 @@ class StatusFooter:
         if self._state == "thinking":
             self._frame_idx += 1
 
+    def _shimmer_or_flat(
+        self, text: str, profile: "ShimmerProfile", elapsed_ms: int, flat_color: str,
+        base_color_override: str | None = None,
+    ) -> StyledLine:
+        """Return shimmered segments or a single flat-color segment."""
+        if self._shimmer:
+            return list(shimmer_styled_segments(
+                text, profile, elapsed_ms, base_color_override=base_color_override,
+            ))
+        return [(text, flat_color)]
+
     def render_line(self) -> StyledLine:
         """Return styled line for current state (blank when idle)."""
         if self._state == "thinking":
+            elapsed_ms = self._frame_idx * SPINNER_FRAME_MS
             if self._transcript_source == "codex":
-                elapsed = (self._frame_idx * SPINNER_FRAME_MS) // 1000
-                return [
-                    ("\u2022 ", self._theme.comment),
-                    (self._verb, self._theme.comment),
-                    (f" ({elapsed}s \u00b7 esc to interrupt)", self._theme.comment),
-                ]
+                elapsed = elapsed_ms // 1000
+                segments: StyledLine = [("\u2022 ", self._theme.comment)]
+                segments.extend(self._shimmer_or_flat(
+                    self._verb, CODEX_SHIMMER, elapsed_ms,
+                    self._theme.comment, base_color_override=self._theme.comment,
+                ))
+                segments.append(
+                    (f" ({elapsed}s \u00b7 esc to interrupt)", self._theme.comment)
+                )
+                return segments
             glyph = SPINNER_FRAMES[self._frame_idx % len(SPINNER_FRAMES)]
-            return [
-                (f"{glyph} ", SPINNER_COLOR),
-                (f"{self._verb}\u2026", SPINNER_COLOR),
-                (" (esc to interrupt)", self._theme.comment),
-            ]
+            segments = list(self._shimmer_or_flat(
+                f"{glyph} {self._verb}\u2026", CLAUDE_SHIMMER, elapsed_ms,
+                SPINNER_COLOR,
+            ))
+            segments.append((" (esc to interrupt)", self._theme.comment))
+            return segments
         if self._state == "done":
             return [
                 ("\u273b ", self._theme.comment),
@@ -236,6 +259,7 @@ def generate_frames(
     spinner_time: float = 1.0,
     thinking_verbs: list[str] | None = None,
     on_turn: Callable[[int, int], None] | None = None,
+    shimmer: bool = True,
 ) -> FrameStore:
     """Convert replay events into animated frames.
 
@@ -276,7 +300,7 @@ def generate_frames(
     buffer: list[StyledLine] = []
 
     # Status footer and prompt line
-    footer = StatusFooter(theme, verbs, transcript_source)
+    footer = StatusFooter(theme, verbs, transcript_source, shimmer=shimmer)
     prompt_line: StyledLine = [(f"{PROMPT_CHAR} ", theme.prompt_color)]
     prompt_line.append(HIGHLIGHT_MARKER)
 

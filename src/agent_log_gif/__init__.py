@@ -81,6 +81,7 @@ _MEDIA_KWARG_NAMES = (
     "speed",
     "spinner_time",
     "thinking_verbs",
+    "shimmer",
 )
 
 
@@ -108,6 +109,7 @@ def _session_to_media(
     speed=None,
     spinner_time=None,
     thinking_verbs=None,
+    shimmer=True,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -218,6 +220,8 @@ def _session_to_media(
         anim_kwargs["spinner_time"] = spinner_time
     if thinking_verbs is not None:
         anim_kwargs["thinking_verbs"] = [v.strip() for v in thinking_verbs.split(",")]
+    if not shimmer:
+        anim_kwargs["shimmer"] = False
 
     bar_width = 20
 
@@ -596,6 +600,11 @@ def _media_options(fn):
                 default=None,
                 help="Comma-separated spinner verbs (e.g. Reticulating,Sleeping).",
             ),
+            click.option(
+                "--shimmer/--no-shimmer",
+                default=True,
+                help="Enable/disable loading line shimmer effect (default: on).",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -637,6 +646,7 @@ def local_cmd(
     speed,
     spinner_time,
     thinking_verbs,
+    shimmer,
     open_browser,
     limit,
 ):
@@ -770,6 +780,7 @@ def local_cmd(
             speed=speed,
             spinner_time=spinner_time,
             thinking_verbs=thinking_verbs,
+            shimmer=shimmer,
         ),
     )
 
@@ -817,6 +828,7 @@ def json_cmd(
     speed,
     spinner_time,
     thinking_verbs,
+    shimmer,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -860,6 +872,7 @@ def json_cmd(
             speed=speed,
             spinner_time=spinner_time,
             thinking_verbs=thinking_verbs,
+            shimmer=shimmer,
         ),
     )
 
