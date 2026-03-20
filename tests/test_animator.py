@@ -3,6 +3,7 @@
 from agent_log_gif.animator import (
     generate_frames,
 )
+from agent_log_gif.renderer import TerminalRenderer
 from agent_log_gif.timeline import EventType, ReplayEvent
 
 
@@ -238,11 +239,20 @@ class TestGenerateFrames:
         assert before_clusters[0] == after_clusters[0]
 
     def test_assistant_response_reuses_spinner_row(self):
-        """Assistant typing starts on the same row the spinner occupied."""
+        """Assistant typing starts on the same row the spinner occupied.
+
+        The spinner (e.g. "✳ Metamorphosing…") should be replaced in-place
+        by the assistant text ("● Hello"), not pushed to a new row below.
+        We compare the y-position of their bottom text clusters — same row
+        means within half a character height; a different row would be ~15px+.
+        """
         from agent_log_gif.animator import SPINNER_COLOR
         from agent_log_gif.theme import TerminalTheme
 
         theme = TerminalTheme()
+        renderer = TerminalRenderer(theme)
+        char_height = renderer._char_height_ss // 2  # 1x char height in pixels
+
         frames = generate_frames(
             [
                 ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
@@ -261,7 +271,10 @@ class TestGenerateFrames:
             first_assistant, theme.hex_to_rgb(theme.foreground)
         )
 
-        assert abs(spinner_clusters[-1][0] - assistant_clusters[-1][0]) <= 3
+        # Within half a row = same logical row. Different row would be char_height (~15px).
+        assert (
+            abs(spinner_clusters[-1][0] - assistant_clusters[-1][0]) <= char_height // 2
+        )
 
     def test_progress_callback_reports_turns(self):
         """Progress callback fires for each turn with correct turn number."""
