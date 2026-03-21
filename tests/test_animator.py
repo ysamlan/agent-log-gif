@@ -460,7 +460,7 @@ class TestToolCallBlink:
             ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
         ]
 
-        generate_frames(events, renderer=renderer)
+        generate_frames(events, renderer=renderer, parallel=1)
 
         for frame_lines in renderer.rendered_lines:
             for line in frame_lines:
@@ -803,26 +803,33 @@ class TestParallelRendering:
 
     def test_parallel_produces_same_frame_count(self):
         events = self._simple_events()
-        seq = generate_frames(events, **self._kwargs())
+        seq = generate_frames(events, parallel=1, **self._kwargs())
         par = generate_frames(events, parallel=4, **self._kwargs())
         assert len(par) == len(seq)
 
     def test_parallel_produces_same_durations(self):
         events = self._simple_events()
-        seq = generate_frames(events, **self._kwargs())
+        seq = generate_frames(events, parallel=1, **self._kwargs())
         par = generate_frames(events, parallel=4, **self._kwargs())
         assert par.durations() == seq.durations()
 
     def test_parallel_produces_identical_images(self):
         events = self._simple_events()
-        seq = generate_frames(events, **self._kwargs())
+        seq = generate_frames(events, parallel=1, **self._kwargs())
         par = generate_frames(events, parallel=4, **self._kwargs())
         for i in range(len(seq)):
             seq_img, _ = seq[i]
             par_img, _ = par[i]
             assert seq_img.tobytes() == par_img.tobytes(), f"Frame {i} differs"
 
-    def test_parallel_zero_uses_sequential(self):
+    def test_parallel_one_uses_sequential(self):
+        """parallel=1 means single-threaded (effectively off)."""
+        events = self._simple_events()
+        frames = generate_frames(events, parallel=1, **self._kwargs())
+        assert len(frames) > 0
+
+    def test_parallel_zero_is_auto(self):
+        """parallel=0 auto-detects worker count."""
         events = self._simple_events()
         frames = generate_frames(events, parallel=0, **self._kwargs())
         assert len(frames) > 0

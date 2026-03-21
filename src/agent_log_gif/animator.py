@@ -9,7 +9,7 @@ pinned at the same pixel row. Only transcript content scrolls.
 
 from __future__ import annotations
 
-import copy
+import os
 import random
 import textwrap
 from collections.abc import Callable
@@ -302,7 +302,10 @@ class _CapturingRenderer:
         lines: list[StyledLine],
         cursor_pos: tuple[int, int] | None = None,
     ) -> Image.Image:
-        self._specs.append((copy.deepcopy(lines), cursor_pos))
+        # Shallow copy: compose_lines() returns a fresh list, and the inner
+        # StyledLine lists (containing immutable tuples) are never mutated
+        # after creation.  deepcopy is unnecessary and ~50x slower.
+        self._specs.append(([list(line) for line in lines], cursor_pos))
         return self._dummy
 
 
@@ -325,6 +328,17 @@ class _DeferredFrameStore:
         self._durations[idx] = duration_ms
 
 
+def _default_parallel_workers() -> int:
+    """Return a sensible default worker count for parallel rendering.
+
+    Benchmarks show diminishing returns past 6 workers (8 is only ~3%
+    faster than 6, and 10+ is slightly worse). Leaves headroom so the
+    system stays responsive.
+    """
+    cpus = os.cpu_count() or 1
+    return max(2, min(cpus - max(2, cpus // 4), 6))
+
+
 def _parallel_render(
     specs: list[tuple[list[StyledLine], tuple[int, int] | None]],
     durations: list[int],
@@ -334,13 +348,18 @@ def _parallel_render(
     """Render frame specs in parallel using ThreadPoolExecutor.
 
     Splits specs into contiguous chunks so each worker's renderer benefits
-    from incremental caching within its chunk.
+    from incremental caching within its chunk. Frames are zlib-compressed
+    inside workers to avoid a ~1 GB memory spike from holding all
+    uncompressed PIL Images at once.
     """
     n = len(specs)
     chunk_size = max(1, (n + workers - 1) // workers)
-    chunks = [specs[i : i + chunk_size] for i in range(0, n, chunk_size)]
 
-    def _render_chunk(chunk_specs):
+    # Pair each spec with its duration so workers can compress in-thread
+    spec_durs = list(zip(specs, durations))
+    chunks = [spec_durs[i : i + chunk_size] for i in range(0, n, chunk_size)]
+
+    def _render_chunk(chunk):
         r = TerminalRenderer(
             renderer.theme,
             title=renderer.title,
@@ -348,17 +367,19 @@ def _parallel_render(
             canvas_background=renderer.canvas_background,
             ssaa=renderer._SSAA,
         )
-        return [r.render_frame(lines, cursor_pos) for lines, cursor_pos in chunk_specs]
+        compressed = []
+        for (lines, cursor_pos), dur in chunk:
+            img = r.render_frame(lines, cursor_pos)
+            data, w, h = FrameStore._compress(img)
+            compressed.append((data, dur, w, h))
+        return compressed
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         chunk_results = list(pool.map(_render_chunk, chunks))
 
     result = FrameStore()
-    dur_idx = 0
     for chunk in chunk_results:
-        for img in chunk:
-            result.append(img, durations[dur_idx])
-            dur_idx += 1
+        result._frames.extend(chunk)
 
     return result
 
@@ -409,9 +430,12 @@ def generate_frames(
     # Custom or default verbs
     verbs = thinking_verbs if thinking_verbs is not None else SPINNER_VERBS
 
-    # Parallel rendering: capture specs during animation, render later
-    _real_renderer = renderer
-    if parallel > 0:
+    # Parallel rendering: capture specs during animation, render later.
+    # 0 = auto (default), 1 = sequential, 2+ = explicit worker count.
+    if parallel == 0:
+        parallel = _default_parallel_workers()
+    if parallel > 1:
+        _real_renderer = renderer
         renderer = _CapturingRenderer(_real_renderer)
         frames = _DeferredFrameStore()
     else:
@@ -596,7 +620,7 @@ def generate_frames(
         frames.set_duration(-1, 2000)
 
     # Parallel: render all captured specs using thread pool
-    if parallel > 0:
+    if parallel > 1:
         return _parallel_render(
             renderer._specs, frames._durations, _real_renderer, parallel
         )

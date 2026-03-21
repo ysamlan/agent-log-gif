@@ -171,12 +171,15 @@ agent-log-gif json [OPTIONS] [FILE]
   --color-scheme NAME          Terminal color scheme (e.g. Dracula, Nord)
   --font PATH                  Custom TTF font file
   --cols INT                   Terminal width in columns (default: 80)
-  --rows INT                   Terminal height in rows (default: 30)
+  --rows INT                   Terminal height in rows (default: 18)
   --font-size INT              Font size in pixels (default: 16)
   --show TYPES                 Extra content: tools, calls, thinking, all
   --speed FLOAT                Typing speed multiplier (default: 1.0)
   --spinner-time FLOAT         Spinner duration multiplier (default: 1.0)
   --thinking-verbs TEXT        Custom spinner verbs (comma-separated)
+  --shimmer / --no-shimmer     Loading line shimmer effect (default: on)
+  --colors INT                 GIF palette size, 2-256 (default: 256)
+  --parallel INT               Rendering workers (0=auto, 1=off, 2+=explicit)
   --open / --no-open           Open result in default viewer
 
 agent-log-gif search KEYWORD [--source claude|codex]

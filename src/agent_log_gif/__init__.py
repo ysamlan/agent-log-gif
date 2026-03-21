@@ -89,26 +89,13 @@ _MEDIA_KWARG_NAMES = (
 )
 
 
-def _default_parallel_workers() -> int:
-    """Return a sensible default worker count for parallel rendering.
-
-    Benchmarks show diminishing returns past 6 workers (8 is only ~3%
-    faster than 6, and 10+ is slightly worse). Leaves headroom so the
-    system stays responsive.
-    """
-    import os
-
-    cpus = os.cpu_count() or 1
-    return max(1, min(cpus - max(2, cpus // 4), 6))
-
-
 def _collect_media_kwargs(turns, **kwargs):
     """Build the shared kwargs dict for _session_to_media from Click params."""
     result = {k: kwargs[k] for k in _MEDIA_KWARG_NAMES}
     result["turns"] = _parse_turns(turns) if turns else None
-    # Resolve parallel=None (auto) to a concrete worker count
+    # parallel=None from CLI means "auto" → pass 0 to generate_frames
     if result.get("parallel") is None:
-        result["parallel"] = _default_parallel_workers()
+        result["parallel"] = 0
     return result
 
 
@@ -730,8 +717,8 @@ def _media_options(fn):
                 "--parallel",
                 type=int,
                 default=None,
-                help="Parallel rendering workers. Auto-detects from CPU count "
-                "by default. Use 0 to disable.",
+                help="Parallel rendering workers (0=auto, 1=off, 2+=explicit). "
+                "Auto-detects from CPU count by default.",
             ),
         ]
     ):
