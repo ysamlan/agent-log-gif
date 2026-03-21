@@ -243,6 +243,21 @@ def _draw_title_text(
     draw.text((tx, ty), title, fill=color, font=font)
 
 
+def _draw_corner(
+    draw: ImageDraw.Draw,
+    bbox: list[int],
+    angle_start: int,
+    angle_end: int,
+    rect: list[int],
+    fill_color: tuple[int, int, int],
+    bg_color: tuple[int, int, int],
+) -> None:
+    """Draw a single rounded corner by overlaying arcs on a background."""
+    draw.pieslice(bbox, angle_start, angle_end, fill=bg_color)
+    draw.rectangle(rect, fill=bg_color)
+    draw.pieslice(bbox, angle_start, angle_end, fill=fill_color)
+
+
 def _draw_rounded_top(
     draw: ImageDraw.Draw,
     width: int,
@@ -253,14 +268,18 @@ def _draw_rounded_top(
 ) -> None:
     """Draw rounded top corners by overlaying background-colored arcs."""
     r = corner_radius
-    # Top-left
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=bg_color)
-    draw.rectangle([0, 0, r, r], fill=bg_color)
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=fill_color)
-    # Top-right
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
-    draw.rectangle([width - r, 0, width, r], fill=bg_color)
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)
+    _draw_corner(
+        draw, [0, 0, r * 2, r * 2], 180, 270, [0, 0, r, r], fill_color, bg_color
+    )
+    _draw_corner(
+        draw,
+        [width - r * 2, 0, width, r * 2],
+        270,
+        360,
+        [width - r, 0, width, r],
+        fill_color,
+        bg_color,
+    )
 
 
 def _draw_rounded_rect_corners(
@@ -273,25 +292,33 @@ def _draw_rounded_rect_corners(
 ) -> None:
     """Overlay all four rounded rectangle corners."""
     r = corner_radius
-
-    # Top-left
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=bg_color)
-    draw.rectangle([0, 0, r, r], fill=bg_color)
-    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=fill_color)
-
-    # Top-right
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
-    draw.rectangle([width - r, 0, width, r], fill=bg_color)
-    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)
-
-    # Bottom-left
-    draw.pieslice([0, height - r * 2, r * 2, height], 90, 180, fill=bg_color)
-    draw.rectangle([0, height - r, r, height], fill=bg_color)
-    draw.pieslice([0, height - r * 2, r * 2, height], 90, 180, fill=fill_color)
-
-    # Bottom-right
-    draw.pieslice([width - r * 2, height - r * 2, width, height], 0, 90, fill=bg_color)
-    draw.rectangle([width - r, height - r, width, height], fill=bg_color)
-    draw.pieslice(
-        [width - r * 2, height - r * 2, width, height], 0, 90, fill=fill_color
+    _draw_corner(
+        draw, [0, 0, r * 2, r * 2], 180, 270, [0, 0, r, r], fill_color, bg_color
+    )
+    _draw_corner(
+        draw,
+        [width - r * 2, 0, width, r * 2],
+        270,
+        360,
+        [width - r, 0, width, r],
+        fill_color,
+        bg_color,
+    )
+    _draw_corner(
+        draw,
+        [0, height - r * 2, r * 2, height],
+        90,
+        180,
+        [0, height - r, r, height],
+        fill_color,
+        bg_color,
+    )
+    _draw_corner(
+        draw,
+        [width - r * 2, height - r * 2, width, height],
+        0,
+        90,
+        [width - r, height - r, width, height],
+        fill_color,
+        bg_color,
     )

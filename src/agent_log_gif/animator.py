@@ -206,9 +206,6 @@ def _append_tool_call_block(
 ) -> None:
     """Append a committed tool call, preserving embedded newlines as rows."""
     lines = text.splitlines() or [text]
-    if not lines:
-        return
-
     first, *rest = lines
     buffer.append(_tool_done_line(first, theme))
     for line_text in rest:
