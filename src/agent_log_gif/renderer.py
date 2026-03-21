@@ -6,7 +6,12 @@ import copy
 
 from PIL import Image, ImageDraw, ImageFont
 
-from agent_log_gif.chrome import ChromeStyle, draw_titlebar, get_titlebar_height
+from agent_log_gif.chrome import (
+    ChromeStyle,
+    draw_titlebar,
+    draw_window_corners,
+    get_titlebar_height,
+)
 from agent_log_gif.theme import TerminalTheme
 
 # Type alias: a styled line is a list of (text, hex_color) segments
@@ -35,11 +40,13 @@ class TerminalRenderer:
         theme: TerminalTheme | None = None,
         title: str = "",
         chrome: ChromeStyle = ChromeStyle.MAC,
+        canvas_background: str | None = None,
         ssaa: float = 2,
     ):
         self.theme = theme or TerminalTheme()
         self.title = title
         self.chrome = chrome
+        self.canvas_background = canvas_background
         self._SSAA = ssaa
 
         # Compute 1x character metrics from a 1x font so that output
@@ -133,10 +140,16 @@ class TerminalRenderer:
         """
         ss = self._SSAA
         bg = self.theme.hex_to_rgb(self.theme.background)
+        canvas_bg = self.theme.hex_to_rgb(self._outer_canvas_background())
         titlebar_bg = self.theme.hex_to_rgb(self.theme.titlebar_color)
 
-        img = Image.new("RGB", (self._ss_width, self._ss_height), bg)
+        img = Image.new("RGB", (self._ss_width, self._ss_height), canvas_bg)
         draw = ImageDraw.Draw(img)
+        if canvas_bg != bg:
+            draw.rectangle(
+                [0, self._ss_content_y, self._ss_width, self._ss_height],
+                fill=bg,
+            )
 
         draw_titlebar(
             draw,
@@ -144,14 +157,29 @@ class TerminalRenderer:
             self._ss_width,
             self._ss_titlebar_h,
             titlebar_bg,
-            bg,
+            canvas_bg,
             ss,
             title=self.title,
             title_font=self._title_font_ss if self.title else None,
             comment_color=self.theme.hex_to_rgb(self.theme.comment),
         )
+        draw_window_corners(
+            draw,
+            self.chrome,
+            self._ss_width,
+            self._ss_height,
+            bg,
+            canvas_bg,
+            ss,
+        )
 
         return img
+
+    def _outer_canvas_background(self) -> str:
+        """Return the color used outside rounded chrome corners."""
+        if self.chrome == ChromeStyle.MAC and self.canvas_background is not None:
+            return self.canvas_background
+        return self.theme.background
 
     def _row_y(self, row_idx: int, empty_rows_above: int) -> int:
         """Compute the y coordinate for a given row index in ss space."""

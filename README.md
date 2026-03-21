@@ -6,7 +6,7 @@
 
 Turn your Claude Code and Codex sessions into animated terminal-style replay GIFs or videos. Share them on Reddit, Slack, etc.
 
-![demo](demo.gif)
+![demo](demo.avif)
 
 Less fun but more usefully: use agent session videos to do retrospective reviews; include cool Claude demos in slide decks.
 
@@ -15,7 +15,7 @@ Supports Claude Code and Codex sessions out of the box.
 <details>
 <summary>Windows chrome + Codex session</summary>
 
-![windows-codex](docs/demo-windows-codex.gif)
+![windows-codex](docs/demo-windows-codex.avif)
 
 </details>
 
@@ -53,6 +53,12 @@ npx skills add ysamlan/agent-log-gif
 GIF output works out of the box. For better compression and video output, install these using your system package manager of choice:
 
 Install [gifsicle](https://www.lcdf.org/gifsicle/) for 80% better compression of GIFs, and [ffmpeg](https://ffmpeg.org/) for MP4/AVIF output. Using your package manager of choice (`brew install gifsicle ffmpeg`, `choco install gifsicle ffmpeg`,  `apt install gifsicle ffmpeg` etc.)
+
+For AVIF, your `ffmpeg` build must include an AV1 encoder. `agent-log-gif` prefers `libsvtav1` and falls back to `libaom-av1`.
+
+```bash
+ffmpeg -encoders | rg 'av1|svt|aom'
+```
 
 ## Usage
 
@@ -106,6 +112,12 @@ agent-log-gif json session.jsonl --chrome windows      # Windows 11
 agent-log-gif json session.jsonl --chrome linux        # GNOME/Ubuntu
 ```
 
+For dark terminal themes embedded on a light page, you can set the outer canvas color behind the rounded macOS corners:
+
+```bash
+agent-log-gif json session.jsonl --chrome mac --canvas-bg "#FFFFFF"
+```
+
 ### Color scheme
 
 480+ terminal color schemes bundled from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes). Default is Dracula.
@@ -155,6 +167,7 @@ agent-log-gif json [OPTIONS] [FILE]
   --music PATH                 Music track for MP4
   --loop-music                 Loop music if shorter than video
   --chrome STYLE               Window chrome: none|mac|mac-square|windows|linux
+  --canvas-bg TEXT             Outer canvas color outside rounded macOS corners
   --color-scheme NAME          Terminal color scheme (e.g. Dracula, Nord)
   --font PATH                  Custom TTF font file
   --cols INT                   Terminal width in columns (default: 80)

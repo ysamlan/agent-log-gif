@@ -7,14 +7,95 @@ holding all expanded frames in memory.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterable
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image
 
 from agent_log_gif.backends import check_ffmpeg
 from agent_log_gif.frame_store import FrameStore
+
+
+def _preferred_av1_encoders() -> list[str]:
+    """Return AV1 encoders in preference order for AVIF output."""
+    return ["libsvtav1", "libaom-av1"]
+
+
+@lru_cache(maxsize=1)
+def _available_ffmpeg_encoders() -> set[str]:
+    """Return the set of encoder names reported by ffmpeg."""
+    check_ffmpeg()
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    encoders = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].startswith("V"):
+            encoders.add(parts[1])
+    return encoders
+
+
+def _select_av1_encoder(encoders: set[str] | None = None) -> str | None:
+    """Choose the AV1 encoder to use for AVIF output."""
+    available = encoders if encoders is not None else _available_ffmpeg_encoders()
+    for encoder in _preferred_av1_encoders():
+        if encoder in available:
+            return encoder
+    return None
+
+
+def _avif_codec_args(encoder: str, cpu_count: int | None = None) -> list[str]:
+    """Return AVIF codec args tuned for interactive encode times.
+
+    ``cpu-used`` is a speed/quality knob, not a thread count. We choose a
+    faster preset on smaller machines and allow slightly more quality on
+    larger ones, while threading still follows the available CPU count.
+    """
+    if encoder == "libsvtav1":
+        return [
+            "-c:v",
+            "libsvtav1",
+            "-preset",
+            "10",
+            "-crf",
+            "36",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+    if cpu_count is None:
+        threads = max(1, os.cpu_count() or 1)
+    else:
+        threads = max(1, cpu_count)
+    if threads <= 4:
+        cpu_used = 8
+    elif threads <= 8:
+        cpu_used = 7
+    else:
+        cpu_used = 6
+
+    return [
+        "-c:v",
+        "libaom-av1",
+        "-cpu-used",
+        str(cpu_used),
+        "-row-mt",
+        "1",
+        "-threads",
+        str(threads),
+        "-crf",
+        "36",
+        "-b:v",
+        "0",
+        "-pix_fmt",
+        "yuv420p",
+    ]
 
 
 def _encode_video(
@@ -79,7 +160,7 @@ def _encode_video(
         str(output_path),
     ]
 
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
 
     # Stream frames inline: expand variable durations to fixed fps on the fly
     # Use raw_iter for FrameStore to skip PIL round-trip (zlib → raw bytes directly)
@@ -91,10 +172,10 @@ def _encode_video(
             proc.stdin.write(raw)
 
     proc.stdin.close()
-    _, stderr = proc.communicate()
+    proc.communicate()
 
     if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed:\n{stderr.decode()}")
+        raise RuntimeError("ffmpeg failed")
 
     return output_path
 
@@ -132,7 +213,7 @@ def save_mp4(
 def save_avif(
     frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
-    fps: int = 15,
+    fps: int = 10,
 ) -> Path:
     """Save frames as an animated AVIF via ffmpeg.
 
@@ -144,14 +225,11 @@ def save_avif(
     Returns:
         Path to the written AVIF file.
     """
-    codec_args = [
-        "-c:v",
-        "libaom-av1",
-        "-crf",
-        "30",
-        "-b:v",
-        "0",
-        "-pix_fmt",
-        "yuv420p",
-    ]
+    encoder = _select_av1_encoder()
+    if encoder is None:
+        raise RuntimeError(
+            "AVIF output requires an ffmpeg build with an AV1 encoder. "
+            "Install or use a build that includes libsvtav1 or libaom-av1."
+        )
+    codec_args = _avif_codec_args(encoder)
     return _encode_video(frames, output_path, fps, codec_args)

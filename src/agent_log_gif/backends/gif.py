@@ -108,7 +108,6 @@ def _optimize_with_gifsicle(gif_path: Path, size_limit_mb: int = 50) -> None:
                 "-o",
                 str(optimized_path),
             ],
-            capture_output=True,
             check=True,
         )
 

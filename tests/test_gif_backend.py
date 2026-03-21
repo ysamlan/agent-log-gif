@@ -1,9 +1,12 @@
 """Tests for the GIF output backend."""
 
+import subprocess
+
+import pytest
 from conftest import make_frame
 from PIL import Image
 
-from agent_log_gif.backends.gif import save_gif
+from agent_log_gif.backends.gif import _optimize_with_gifsicle, save_gif
 from agent_log_gif.frame_store import FrameStore
 
 
@@ -43,7 +46,6 @@ class TestSaveGif:
 
     def test_empty_frames_raises(self, tmp_path):
         """Empty frame list raises ValueError."""
-        import pytest
 
         with pytest.raises(ValueError, match="empty"):
             save_gif([], tmp_path / "test.gif")
@@ -84,3 +86,29 @@ class TestSaveGif:
         with Image.open(output) as img:
             assert img.is_animated
             assert img.n_frames == 2
+
+
+class TestGifsicleInvocation:
+    def test_gifsicle_inherits_stderr(self, monkeypatch, tmp_path):
+        gif_path = tmp_path / "test.gif"
+        gif_path.write_bytes(b"gif")
+        optimized_path = gif_path.with_suffix(".opt.gif")
+        optimized_path.write_bytes(b"smaller")
+        recorded = {}
+
+        monkeypatch.setattr(
+            "agent_log_gif.backends.gif.shutil.which", lambda name: "/usr/bin/gifsicle"
+        )
+
+        def fake_run(cmd, check=False, stderr=None):
+            recorded["cmd"] = cmd
+            recorded["check"] = check
+            recorded["stderr"] = stderr
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        _optimize_with_gifsicle(gif_path)
+
+        assert recorded["stderr"] is None
+        assert recorded["check"] is True

@@ -76,3 +76,54 @@ class TestJsonCommand:
 
         assert result.exit_code == 0, result.output
         assert (tmp_path / "sample_session.gif").exists()
+
+    def test_canvas_bg_flag_sets_rounded_mac_corner_color(self, tmp_path):
+        """--canvas-bg changes the outside-corner color for rounded mac chrome."""
+        fixture = Path(__file__).parent / "sample_session.jsonl"
+        output = tmp_path / "canvas.gif"
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "json",
+                str(fixture),
+                "-o",
+                str(output),
+                "--chrome",
+                "mac",
+                "--canvas-bg",
+                "#FFFFFF",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        with Image.open(output) as img:
+            corner = img.convert("RGB").getpixel((0, 0))
+            assert all(channel >= 245 for channel in corner)
+
+    def test_canvas_bg_is_not_ignored_for_avif(self, tmp_path):
+        """AVIF output should still honor the outer canvas color setting."""
+        fixture = Path(__file__).parent / "sample_session.jsonl"
+        output = tmp_path / "canvas.avif"
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "json",
+                str(fixture),
+                "-o",
+                str(output),
+                "--format",
+                "avif",
+                "--chrome",
+                "mac",
+                "--canvas-bg",
+                "#FFFFFF",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "ignored for AVIF" not in result.output
+        assert output.exists()

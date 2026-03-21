@@ -113,3 +113,46 @@ class TestRendererChrome:
         dot_pixel_mac = mac_frame.getpixel((18, 18))
         dot_pixel_square = square_frame.getpixel((18, 18))
         assert dot_pixel_mac == dot_pixel_square
+
+    def test_mac_can_use_custom_canvas_background(self):
+        theme = TerminalTheme(cols=40, rows=10, background="#282A36")
+        renderer = TerminalRenderer(
+            theme,
+            chrome=ChromeStyle.MAC,
+            canvas_background="#FFFFFF",
+        )
+
+        frame = renderer.render_frame([])
+
+        assert frame.getpixel((0, 0)) == (255, 255, 255)
+        assert frame.getpixel((frame.width // 2, renderer.image_height - 2)) == (
+            40,
+            42,
+            54,
+        )
+        assert frame.getpixel((0, frame.height - 1)) == (255, 255, 255)
+        assert frame.getpixel((frame.width - 1, frame.height - 1)) == (
+            255,
+            255,
+            255,
+        )
+
+    def test_canvas_background_is_ignored_for_mac_square(self):
+        theme = TerminalTheme(cols=40, rows=10, background="#282A36")
+        default_renderer = TerminalRenderer(
+            theme,
+            chrome=ChromeStyle.MAC_SQUARE,
+        )
+        renderer = TerminalRenderer(
+            theme,
+            chrome=ChromeStyle.MAC_SQUARE,
+            canvas_background="#FFFFFF",
+        )
+
+        default_frame = default_renderer.render_frame([])
+        frame = renderer.render_frame([])
+
+        assert frame.getpixel((0, 0)) == default_frame.getpixel((0, 0))
+        assert frame.getpixel((0, frame.height - 1)) == default_frame.getpixel(
+            (0, frame.height - 1)
+        )

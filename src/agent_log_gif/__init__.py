@@ -1,6 +1,7 @@
 """Convert Claude Code or Codex session logs to animated GIFs."""
 
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,7 @@ _MEDIA_KWARG_NAMES = (
     "loop_music",
     "font",
     "chrome",
+    "canvas_bg",
     "color_scheme",
     "cols",
     "rows",
@@ -92,6 +94,18 @@ def _collect_media_kwargs(turns, **kwargs):
     return result
 
 
+def _normalize_hex_color(value: str | None, flag_name: str) -> str | None:
+    """Normalize a CLI hex color to #RRGGBB."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if normalized.startswith("#"):
+        normalized = normalized[1:]
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", normalized):
+        raise click.ClickException(f"{flag_name} must be a hex color like #FFFFFF")
+    return f"#{normalized.upper()}"
+
+
 def _session_to_media(
     session_path,
     output_path,
@@ -101,6 +115,7 @@ def _session_to_media(
     loop_music=False,
     font=None,
     chrome="mac",
+    canvas_bg=None,
     color_scheme=None,
     cols=None,
     rows=None,
@@ -210,7 +225,12 @@ def _session_to_media(
     else:
         theme = TerminalTheme(**theme_kwargs)
     chrome_style = ChromeStyle(chrome.lower())
-    renderer = TerminalRenderer(theme, chrome=chrome_style)
+    canvas_bg = _normalize_hex_color(canvas_bg, "--canvas-bg")
+    renderer = TerminalRenderer(
+        theme,
+        chrome=chrome_style,
+        canvas_background=canvas_bg,
+    )
 
     transcript_source = data.get("transcript_source", "claude")
     anim_kwargs = {}
@@ -440,7 +460,8 @@ def _check_optional_tools(fmt: str) -> None:
     """Warn or error about missing optional tools based on output format.
 
     GIF: warn if gifsicle is missing (output works, just larger).
-    MP4/AVIF: error if ffmpeg is missing (cannot proceed).
+    MP4: error if ffmpeg is missing (cannot proceed).
+    AVIF: ffmpeg must be present and include a supported AV1 encoder.
     """
     import shutil
 
@@ -450,6 +471,15 @@ def _check_optional_tools(fmt: str) -> None:
             "Install it: apt install ffmpeg (Linux), brew install ffmpeg (macOS),\n"
             "or download from https://ffmpeg.org/download.html"
         )
+    if fmt == "avif":
+        from agent_log_gif.backends.video import _select_av1_encoder
+
+        if _select_av1_encoder() is None:
+            raise click.ClickException(
+                "AVIF output requires an ffmpeg build with an AV1 encoder.\n"
+                "Supported encoders: libsvtav1 (preferred) or libaom-av1.\n"
+                "Check with: ffmpeg -encoders | rg 'av1|svt|aom'"
+            )
 
     if fmt == "gif" and not shutil.which("gifsicle"):
         click.echo(
@@ -556,6 +586,11 @@ def _media_options(fn):
                 help="Window chrome style (default: mac).",
             ),
             click.option(
+                "--canvas-bg",
+                default=None,
+                help="Outer canvas color outside rounded macOS corners (#RRGGBB).",
+            ),
+            click.option(
                 "--color-scheme",
                 default=None,
                 help="Terminal color scheme (e.g. Dracula, 'Gruvbox Dark', Nord).",
@@ -638,6 +673,7 @@ def local_cmd(
     loop_music,
     font,
     chrome,
+    canvas_bg,
     color_scheme,
     cols,
     rows,
@@ -772,6 +808,7 @@ def local_cmd(
             loop_music=loop_music,
             font=font,
             chrome=chrome,
+            canvas_bg=canvas_bg,
             color_scheme=color_scheme,
             cols=cols,
             rows=rows,
@@ -820,6 +857,7 @@ def json_cmd(
     loop_music,
     font,
     chrome,
+    canvas_bg,
     color_scheme,
     cols,
     rows,
@@ -864,6 +902,7 @@ def json_cmd(
             loop_music=loop_music,
             font=font,
             chrome=chrome,
+            canvas_bg=canvas_bg,
             color_scheme=color_scheme,
             cols=cols,
             rows=rows,

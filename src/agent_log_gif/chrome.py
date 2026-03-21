@@ -87,6 +87,26 @@ def draw_titlebar(
         _draw_title_text(draw, title, title_font, width, height, chrome_fg, style, ss)
 
 
+def draw_window_corners(
+    draw: ImageDraw.Draw,
+    style: ChromeStyle,
+    width: int,
+    height: int,
+    fill_color: tuple[int, int, int],
+    bg_color: tuple[int, int, int],
+    ss: int | float,
+) -> None:
+    """Apply rounded outer window corners for styles that need them."""
+    if style != ChromeStyle.MAC:
+        return
+
+    corner_radius = int(get_corner_radius(style) * ss)
+    if corner_radius <= 0:
+        return
+
+    _draw_rounded_rect_corners(draw, width, height, fill_color, bg_color, corner_radius)
+
+
 # -- macOS ----------------------------------------------------------------
 
 _MAC_TRAFFIC_Y = 18
@@ -241,3 +261,37 @@ def _draw_rounded_top(
     draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
     draw.rectangle([width - r, 0, width, r], fill=bg_color)
     draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)
+
+
+def _draw_rounded_rect_corners(
+    draw: ImageDraw.Draw,
+    width: int,
+    height: int,
+    fill_color: tuple[int, int, int],
+    bg_color: tuple[int, int, int],
+    corner_radius: int,
+) -> None:
+    """Overlay all four rounded rectangle corners."""
+    r = corner_radius
+
+    # Top-left
+    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=bg_color)
+    draw.rectangle([0, 0, r, r], fill=bg_color)
+    draw.pieslice([0, 0, r * 2, r * 2], 180, 270, fill=fill_color)
+
+    # Top-right
+    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=bg_color)
+    draw.rectangle([width - r, 0, width, r], fill=bg_color)
+    draw.pieslice([width - r * 2, 0, width, r * 2], 270, 360, fill=fill_color)
+
+    # Bottom-left
+    draw.pieslice([0, height - r * 2, r * 2, height], 90, 180, fill=bg_color)
+    draw.rectangle([0, height - r, r, height], fill=bg_color)
+    draw.pieslice([0, height - r * 2, r * 2, height], 90, 180, fill=fill_color)
+
+    # Bottom-right
+    draw.pieslice([width - r * 2, height - r * 2, width, height], 0, 90, fill=bg_color)
+    draw.rectangle([width - r, height - r, width, height], fill=bg_color)
+    draw.pieslice(
+        [width - r * 2, height - r * 2, width, height], 0, 90, fill=fill_color
+    )
