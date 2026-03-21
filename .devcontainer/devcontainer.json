@@ -13,7 +13,7 @@
         "anthropic.claude-code",
         "charliemarsh.ruff",
         "eamodio.gitlens",
-        "monokai.theme-monokai-pro-vscode"
+        "iwyvi.chinolor"
       ],
       "settings": {
         "editor.formatOnSave": true,
