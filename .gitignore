@@ -13,3 +13,5 @@ tmp/
 .claude/worktrees
 skills/agent-log-gif-workspace
 .claude/settings.local.json
+target/
+gifsicle-bin/
