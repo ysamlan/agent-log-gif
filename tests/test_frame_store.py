@@ -122,3 +122,32 @@ class TestFrameStore:
         assert dur == 100
         assert isinstance(raw_bytes, bytes)
         assert raw_bytes == orig.tobytes()
+
+    def test_uses_lz4_not_zlib(self):
+        """Stored bytes must be LZ4 frame format, not zlib."""
+        import lz4.frame
+
+        store = FrameStore()
+        store.append(_make_img("red"), 100)
+        compressed_data = store._frames[0][0]
+        # LZ4 frame format starts with magic number 0x184D2204 (little-endian)
+        assert compressed_data[:4] == b"\x04\x22\x4d\x18", (
+            "Stored data does not have LZ4 frame magic number"
+        )
+        # Verify it's valid LZ4 by decompressing
+        raw = lz4.frame.decompress(compressed_data)
+        assert raw == _make_img("red").tobytes()
+
+    def test_large_frame_roundtrip(self):
+        """Simulate a 740x650 RGB terminal frame and verify roundtrip."""
+        store = FrameStore()
+        # Create a frame with varied pixel data (not just solid color)
+        img = Image.new("RGB", (740, 650), "black")
+        for x in range(0, 740, 10):
+            for y in range(0, 650, 10):
+                img.putpixel((x, y), (x % 256, y % 256, (x + y) % 256))
+        store.append(img, 42)
+        recovered, dur = store[0]
+        assert dur == 42
+        assert recovered.tobytes() == img.tobytes()
+        assert recovered.size == (740, 650)

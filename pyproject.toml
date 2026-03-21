@@ -12,6 +12,7 @@ dependencies = [
     "click",
     "click-default-group",
     "httpx",
+    "lz4>=4.4.5",
     "Pillow>=10.0",
     "questionary",
 ]

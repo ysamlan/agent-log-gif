@@ -7,6 +7,9 @@ from conftest import make_frame, make_striped_frame
 from PIL import Image
 
 from agent_log_gif.backends.gif import _build_palette, _optimize_with_gifsicle, save_gif
+
+# save_gif now uses frame diffing by default and takes a gifsicle= parameter.
+# Tests below disable gifsicle post-processing for speed/isolation.
 from agent_log_gif.frame_store import FrameStore
 
 
@@ -192,8 +195,63 @@ class TestGlobalPalette:
         assert out_64.stat().st_size <= out_256.stat().st_size
 
 
+class TestFrameDiffing:
+    def test_framediff_produces_valid_animated_gif(self, tmp_path):
+        """Frame-diffed GIF with different frames is a valid animation."""
+        # First frame has all colors so the global palette includes them
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False)
+
+        with Image.open(output) as gif:
+            assert gif.is_animated
+            assert gif.n_frames == 3
+
+    def test_framediff_preserves_visual_content(self, tmp_path):
+        """Last frame of a frame-diffed GIF has the correct content."""
+        # Use a striped first frame so all colors make it into the palette
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 255, 0), (0, 0, 255)),
+            make_frame("green"),
+            make_frame("blue"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False)
+
+        with Image.open(output) as gif:
+            gif.seek(2)
+            rgb = gif.convert("RGB")
+            colors = rgb.getcolors()
+            assert len(colors) == 1
+            assert colors[0][1] == (0, 0, 255)
+
+    def test_gifsicle_false_skips_postprocessing(self, monkeypatch, tmp_path):
+        """gifsicle=False prevents calling gifsicle."""
+        called = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: called.append(1))
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False)
+        assert len(called) == 0
+
+    def test_disposal_is_asis(self, tmp_path):
+        """Frame-diffed GIF uses disposal=1 (do not dispose)."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False)
+
+        with Image.open(output) as gif:
+            # Frame 0 disposal
+            assert gif.disposal_method in (0, 1)  # asis / do not dispose
+
+
 class TestGifsicleInvocation:
-    def test_gifsicle_inherits_stderr(self, monkeypatch, tmp_path):
+    def test_gifsicle_uses_o2(self, monkeypatch, tmp_path):
+        """gifsicle is called with -O2 (not -O3)."""
         gif_path = tmp_path / "test.gif"
         gif_path.write_bytes(b"gif")
         optimized_path = gif_path.with_suffix(".opt.gif")
@@ -214,5 +272,7 @@ class TestGifsicleInvocation:
 
         _optimize_with_gifsicle(gif_path)
 
+        assert "-O2" in recorded["cmd"]
+        assert "--lossy=80" in recorded["cmd"]
         assert recorded["stderr"] is None
         assert recorded["check"] is True

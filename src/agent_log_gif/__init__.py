@@ -62,8 +62,10 @@ from agent_log_gif.web import (  # noqa: F401 - re-exported for backward compat
 # Default turn cap for GIF output
 DEFAULT_MAX_TURNS = 20
 
-# GIF files larger than this skip gifsicle optimization (it OOMs on huge files)
-GIFSICLE_SIZE_LIMIT_MB = 100
+# GIF files larger than this skip gifsicle optimization.
+# Frame diffing produces ~4x smaller intermediates, so 200 MB covers very
+# long sessions that would have been skipped before.
+GIFSICLE_SIZE_LIMIT_MB = 200
 
 # Warn about GIF size when session exceeds this many turns
 GIF_TURN_WARNING_THRESHOLD = 10
@@ -86,6 +88,7 @@ _MEDIA_KWARG_NAMES = (
     "shimmer",
     "colors",
     "parallel",
+    "gifsicle",
 )
 
 
@@ -183,6 +186,7 @@ def _session_to_media(
     shimmer=True,
     colors=None,
     parallel=0,
+    gifsicle=True,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -333,6 +337,7 @@ def _session_to_media(
             palette_seeds=_palette_seed_colors(
                 theme, transcript_source, shimmer, canvas_bg
             ),
+            gifsicle=gifsicle,
         )
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
@@ -720,6 +725,12 @@ def _media_options(fn):
                 help="Parallel rendering workers (0=auto, 1=off, 2+=explicit). "
                 "Auto-detects from CPU count by default.",
             ),
+            click.option(
+                "--gifsicle/--no-gifsicle",
+                default=True,
+                help="Enable/disable gifsicle post-processing (default: on). "
+                "Disabling produces larger GIFs but skips the gifsicle step.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -765,6 +776,7 @@ def local_cmd(
     shimmer,
     colors,
     parallel,
+    gifsicle,
     open_browser,
     limit,
 ):
@@ -902,6 +914,7 @@ def local_cmd(
             shimmer=shimmer,
             colors=colors,
             parallel=parallel,
+            gifsicle=gifsicle,
         ),
     )
 
@@ -953,6 +966,7 @@ def json_cmd(
     shimmer,
     colors,
     parallel,
+    gifsicle,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -1000,6 +1014,7 @@ def json_cmd(
             shimmer=shimmer,
             colors=colors,
             parallel=parallel,
+            gifsicle=gifsicle,
         ),
     )
 

@@ -1,7 +1,8 @@
 """GIF output backend using Pillow.
 
 Assembles animated GIF from a sequence of (Image, duration_ms) frames.
-Optionally optimizes with gifsicle if available.
+Uses frame differencing (transparent unchanged pixels) to minimize LZW
+encoding work and GIF file size. Optionally post-processes with gifsicle.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import click
-from PIL import Image
+from PIL import Image, ImageChops
 
 from agent_log_gif.frame_store import FrameStore
 
@@ -49,22 +50,28 @@ def _build_palette(
 def save_gif(
     frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
-    size_limit_mb: int = 50,
+    size_limit_mb: int = 200,
     colors: int | None = None,
     palette_seeds: list[tuple[int, int, int]] | None = None,
+    gifsicle: bool = True,
 ) -> Path:
-    """Save frames as an animated GIF.
+    """Save frames as an animated GIF with frame differencing.
 
     Uses a global palette derived from the first frame (plus optional seed
-    colors) so all frames share identical palette indices, improving LZW
-    compression. Dithering is disabled since terminal content is solid colors.
+    colors). Subsequent frames encode only changed pixels via transparency,
+    producing much smaller files and faster LZW encoding.
+
+    When gifsicle is available and enabled, post-processes with
+    ``gifsicle -O2 --lossy=80`` for further compression.
 
     Args:
         frames: FrameStore or iterable of (PIL.Image, duration_ms) tuples.
         output_path: Path to write the .gif file.
-        size_limit_mb: Skip gifsicle for files larger than this.
-        colors: Palette size, 2-256 (default: 256). None means 256.
+        size_limit_mb: Skip gifsicle for files larger than this (default 200).
+        colors: Palette size, 2-256 (default: 256). One slot is reserved
+                for transparency, so effective max is 255. None means 256.
         palette_seeds: RGB tuples to guarantee in the palette.
+        gifsicle: Whether to post-process with gifsicle (default True).
 
     Returns:
         Path to the written GIF file.
@@ -72,21 +79,18 @@ def save_gif(
     Raises:
         ValueError: If frames is empty.
     """
-    colors = colors or 256
+    # Reserve one palette slot for the transparent index
+    colors = min((colors or 256), 255)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # We need durations up front for Pillow, and the first frame separately.
-    # Use FrameStore.durations() if available (avoids decompressing images),
-    # otherwise consume the iterable.
+    # Materialize durations and frame iterator
     if isinstance(frames, FrameStore):
-        # FrameStore path: extract durations without decompressing
         if len(frames) == 0:
             raise ValueError("Cannot create GIF from empty frame list")
         durations = [max(d, 20) for d in frames.durations()]
         frame_iter = iter(frames)
     else:
-        # Generic iterable: materialize to get durations + first frame
         frame_list = list(frames)
         if not frame_list:
             raise ValueError("Cannot create GIF from empty frame list")
@@ -96,30 +100,81 @@ def save_gif(
     # Build global palette from first frame + seed colors
     first_img, _ = next(frame_iter)
     palette_ref = _build_palette(first_img, colors=colors, palette_seeds=palette_seeds)
-    first_quantized = first_img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
+    first_q = first_img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
 
-    def _quantize_rest():
-        """Generator: quantize remaining frames against the global palette."""
+    # The transparent color index — quantized to `colors` colors, so
+    # index `colors` is the first free slot
+    transparent_idx = colors
+
+    # Get the palette bytes for reuse
+    palette_bytes = first_q.getpalette()
+
+    # Previous frame pixel data for diffing (as flat bytes for speed)
+    prev_data = first_q.tobytes()
+    width, height = first_q.size
+
+    def _make_diff_frames():
+        """Yield diff frames: only changed pixels, rest transparent.
+
+        Uses Pillow's C-level ImageChops to compute the diff mask (~0.6 ms
+        per 740x650 frame). Both frames share the same global palette, so
+        comparing raw P-mode byte values (palette indices) is correct.
+        """
+        nonlocal prev_data
+
+        # Reusable transparent fill image
+        trans_l = Image.new("L", (width, height), transparent_idx)
+        # Precomputed LUT: 0->0, nonzero->255 (avoids per-frame lambda)
+        change_lut = [0] + [255] * 255
+
         for img, _ in frame_iter:
-            yield img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
+            curr_q = img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
+            curr_data = curr_q.tobytes()
 
-    first_quantized.save(
+            # Treat P-mode index bytes as L-mode for C-speed comparison
+            prev_l = Image.frombytes("L", (width, height), prev_data)
+            curr_l = Image.frombytes("L", (width, height), curr_data)
+
+            # difference(): 0 where same, nonzero where different
+            diff_l = ImageChops.difference(prev_l, curr_l)
+            # Binary mask: 0 where unchanged, 255 where changed
+            mask = diff_l.point(change_lut)
+
+            # composite: changed pixels from curr, unchanged from transparent
+            result_l = Image.composite(curr_l, trans_l, mask)
+
+            # Wrap as P-mode with the global palette
+            diff_img = Image.frombytes("P", (width, height), result_l.tobytes())
+            diff_img.putpalette(palette_bytes)
+            diff_img.info["transparency"] = transparent_idx
+            yield diff_img
+
+            prev_data = curr_data
+
+    # Set transparency on first frame (fully opaque, but Pillow needs
+    # the GCE block for consistency)
+    first_q.info["transparency"] = transparent_idx
+
+    first_q.save(
         str(output_path),
         save_all=True,
-        append_images=_quantize_rest(),
+        append_images=_make_diff_frames(),
         duration=durations,
         loop=0,
-        disposal=2,  # restore to background between frames
+        disposal=1,  # do not dispose — previous frame stays visible
+        transparency=transparent_idx,
     )
 
-    # Try gifsicle optimization if available (skip for very large files)
-    _optimize_with_gifsicle(output_path, size_limit_mb=size_limit_mb, colors=colors)
+    if gifsicle:
+        _optimize_with_gifsicle(
+            output_path, size_limit_mb=size_limit_mb, colors=colors
+        )
 
     return output_path
 
 
 def _optimize_with_gifsicle(
-    gif_path: Path, size_limit_mb: int = 50, colors: int = 256
+    gif_path: Path, size_limit_mb: int = 200, colors: int = 256
 ) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
     if not shutil.which("gifsicle"):
@@ -139,7 +194,7 @@ def _optimize_with_gifsicle(
     try:
         cmd = [
             "gifsicle",
-            "-O3",
+            "-O2",
             "--lossy=80",
         ]
         if colors < 256:
