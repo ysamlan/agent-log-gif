@@ -85,13 +85,30 @@ _MEDIA_KWARG_NAMES = (
     "thinking_verbs",
     "shimmer",
     "colors",
+    "parallel",
 )
+
+
+def _default_parallel_workers() -> int:
+    """Return a sensible default worker count for parallel rendering.
+
+    Benchmarks show diminishing returns past 6 workers (8 is only ~3%
+    faster than 6, and 10+ is slightly worse). Leaves headroom so the
+    system stays responsive.
+    """
+    import os
+
+    cpus = os.cpu_count() or 1
+    return max(1, min(cpus - max(2, cpus // 4), 6))
 
 
 def _collect_media_kwargs(turns, **kwargs):
     """Build the shared kwargs dict for _session_to_media from Click params."""
     result = {k: kwargs[k] for k in _MEDIA_KWARG_NAMES}
     result["turns"] = _parse_turns(turns) if turns else None
+    # Resolve parallel=None (auto) to a concrete worker count
+    if result.get("parallel") is None:
+        result["parallel"] = _default_parallel_workers()
     return result
 
 
@@ -178,6 +195,7 @@ def _session_to_media(
     thinking_verbs=None,
     shimmer=True,
     colors=None,
+    parallel=0,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -310,6 +328,7 @@ def _session_to_media(
         renderer=renderer,
         transcript_source=transcript_source,
         on_turn=_report_turn,
+        parallel=parallel,
         **anim_kwargs,
     )
 
@@ -707,6 +726,13 @@ def _media_options(fn):
                 default=None,
                 help="GIF palette size, 2-256 (default: 256). Try 128 for smaller files.",
             ),
+            click.option(
+                "--parallel",
+                type=int,
+                default=None,
+                help="Parallel rendering workers. Auto-detects from CPU count "
+                "by default. Use 0 to disable.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -751,6 +777,7 @@ def local_cmd(
     thinking_verbs,
     shimmer,
     colors,
+    parallel,
     open_browser,
     limit,
 ):
@@ -887,6 +914,7 @@ def local_cmd(
             thinking_verbs=thinking_verbs,
             shimmer=shimmer,
             colors=colors,
+            parallel=parallel,
         ),
     )
 
@@ -937,6 +965,7 @@ def json_cmd(
     thinking_verbs,
     shimmer,
     colors,
+    parallel,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -983,6 +1012,7 @@ def json_cmd(
             thinking_verbs=thinking_verbs,
             shimmer=shimmer,
             colors=colors,
+            parallel=parallel,
         ),
     )
 

@@ -9,10 +9,14 @@ pinned at the same pixel row. Only transcript content scrolls.
 
 from __future__ import annotations
 
+import copy
 import random
 import textwrap
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
+from PIL import Image
 
 from agent_log_gif.frame_store import FrameStore
 from agent_log_gif.layout import LayoutFrame, compose_lines
@@ -285,6 +289,80 @@ def _snap_muted_block(
         buffer.append([])
 
 
+class _CapturingRenderer:
+    """Drop-in for TerminalRenderer that captures frame specs instead of rendering."""
+
+    def __init__(self, real_renderer: TerminalRenderer):
+        self.theme = real_renderer.theme
+        self._specs: list[tuple[list[StyledLine], tuple[int, int] | None]] = []
+        self._dummy = Image.new("RGB", (1, 1))
+
+    def render_frame(
+        self,
+        lines: list[StyledLine],
+        cursor_pos: tuple[int, int] | None = None,
+    ) -> Image.Image:
+        self._specs.append((copy.deepcopy(lines), cursor_pos))
+        return self._dummy
+
+
+class _DeferredFrameStore:
+    """Drop-in for FrameStore that stores only durations (discards dummy images)."""
+
+    def __init__(self) -> None:
+        self._durations: list[int] = []
+
+    def append(self, img: Image.Image, duration_ms: int) -> None:
+        self._durations.append(duration_ms)
+
+    def __len__(self) -> int:
+        return len(self._durations)
+
+    def __bool__(self) -> bool:
+        return len(self._durations) > 0
+
+    def set_duration(self, idx: int, duration_ms: int) -> None:
+        self._durations[idx] = duration_ms
+
+
+def _parallel_render(
+    specs: list[tuple[list[StyledLine], tuple[int, int] | None]],
+    durations: list[int],
+    renderer: TerminalRenderer,
+    workers: int,
+) -> FrameStore:
+    """Render frame specs in parallel using ThreadPoolExecutor.
+
+    Splits specs into contiguous chunks so each worker's renderer benefits
+    from incremental caching within its chunk.
+    """
+    n = len(specs)
+    chunk_size = max(1, (n + workers - 1) // workers)
+    chunks = [specs[i : i + chunk_size] for i in range(0, n, chunk_size)]
+
+    def _render_chunk(chunk_specs):
+        r = TerminalRenderer(
+            renderer.theme,
+            title=renderer.title,
+            chrome=renderer.chrome,
+            canvas_background=renderer.canvas_background,
+            ssaa=renderer._SSAA,
+        )
+        return [r.render_frame(lines, cursor_pos) for lines, cursor_pos in chunk_specs]
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        chunk_results = list(pool.map(_render_chunk, chunks))
+
+    result = FrameStore()
+    dur_idx = 0
+    for chunk in chunk_results:
+        for img in chunk:
+            result.append(img, durations[dur_idx])
+            dur_idx += 1
+
+    return result
+
+
 def generate_frames(
     events: list[ReplayEvent],
     theme: TerminalTheme | None = None,
@@ -295,6 +373,7 @@ def generate_frames(
     thinking_verbs: list[str] | None = None,
     on_turn: Callable[[int, int], None] | None = None,
     shimmer: bool = True,
+    parallel: int = 0,
 ) -> FrameStore:
     """Convert replay events into animated frames.
 
@@ -330,7 +409,13 @@ def generate_frames(
     # Custom or default verbs
     verbs = thinking_verbs if thinking_verbs is not None else SPINNER_VERBS
 
-    frames = FrameStore()
+    # Parallel rendering: capture specs during animation, render later
+    _real_renderer = renderer
+    if parallel > 0:
+        renderer = _CapturingRenderer(_real_renderer)
+        frames = _DeferredFrameStore()
+    else:
+        frames = FrameStore()
     # Persistent text buffer (list of styled lines) that grows over time
     buffer: list[StyledLine] = []
 
@@ -509,6 +594,12 @@ def generate_frames(
     # Hold final frame a bit longer
     if frames:
         frames.set_duration(-1, 2000)
+
+    # Parallel: render all captured specs using thread pool
+    if parallel > 0:
+        return _parallel_render(
+            renderer._specs, frames._durations, _real_renderer, parallel
+        )
 
     return frames
 

@@ -786,6 +786,82 @@ class TestGenerateFrames:
         assert len(frames) > 0
 
 
+class TestParallelRendering:
+    """Parallel frame rendering produces identical output to sequential."""
+
+    @staticmethod
+    def _simple_events():
+        return [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hello"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hi there!"),
+        ]
+
+    @staticmethod
+    def _kwargs():
+        """Deterministic kwargs: fixed verb + no shimmer removes all randomness."""
+        return {"thinking_verbs": ["Thinking"], "shimmer": False}
+
+    def test_parallel_produces_same_frame_count(self):
+        events = self._simple_events()
+        seq = generate_frames(events, **self._kwargs())
+        par = generate_frames(events, parallel=4, **self._kwargs())
+        assert len(par) == len(seq)
+
+    def test_parallel_produces_same_durations(self):
+        events = self._simple_events()
+        seq = generate_frames(events, **self._kwargs())
+        par = generate_frames(events, parallel=4, **self._kwargs())
+        assert par.durations() == seq.durations()
+
+    def test_parallel_produces_identical_images(self):
+        events = self._simple_events()
+        seq = generate_frames(events, **self._kwargs())
+        par = generate_frames(events, parallel=4, **self._kwargs())
+        for i in range(len(seq)):
+            seq_img, _ = seq[i]
+            par_img, _ = par[i]
+            assert seq_img.tobytes() == par_img.tobytes(), f"Frame {i} differs"
+
+    def test_parallel_zero_uses_sequential(self):
+        events = self._simple_events()
+        frames = generate_frames(events, parallel=0, **self._kwargs())
+        assert len(frames) > 0
+
+    def test_parallel_final_frame_held_longer(self):
+        events = self._simple_events()
+        frames = generate_frames(events, parallel=4, **self._kwargs())
+        _, last_ms = frames[-1]
+        assert last_ms >= 1000
+
+    def test_parallel_progress_callback(self):
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Bye"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="See ya"),
+        ]
+        reported = []
+        generate_frames(
+            events,
+            parallel=4,
+            on_turn=lambda t, n: reported.append((t, n)),
+            **self._kwargs(),
+        )
+        assert reported == [(1, 2), (2, 2)]
+
+    def test_parallel_with_tool_events(self):
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.TOOL_CALL, text="Bash echo hi"),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+        seq = generate_frames(events, **self._kwargs())
+        par = generate_frames(events, parallel=4, **self._kwargs())
+        assert len(par) == len(seq)
+        assert par.durations() == seq.durations()
+
+
 class TestElideWrappedLines:
     def test_short_text_unchanged(self):
         lines = ["line 1", "line 2", "line 3"]
