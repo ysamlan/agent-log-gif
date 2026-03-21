@@ -3,10 +3,10 @@
 import subprocess
 
 import pytest
-from conftest import make_frame
+from conftest import make_frame, make_striped_frame
 from PIL import Image
 
-from agent_log_gif.backends.gif import _optimize_with_gifsicle, save_gif
+from agent_log_gif.backends.gif import _build_palette, _optimize_with_gifsicle, save_gif
 from agent_log_gif.frame_store import FrameStore
 
 
@@ -27,7 +27,12 @@ class TestSaveGif:
 
     def test_gif_is_animated(self, tmp_path):
         """Output GIF has multiple frames."""
-        frames = [make_frame("red"), make_frame("blue"), make_frame("green")]
+        # First frame contains all colors so the global palette includes them
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+        ]
         output = tmp_path / "test.gif"
         save_gif(frames, output)
 
@@ -59,8 +64,9 @@ class TestSaveGif:
 
     def test_durations_preserved(self, tmp_path):
         """Frame durations are set correctly."""
+        # First frame contains all colors so global palette includes them
         frames = [
-            make_frame("red", 100),
+            (make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0))[0], 100),
             make_frame("blue", 200),
             make_frame("green", 500),
         ]
@@ -86,6 +92,104 @@ class TestSaveGif:
         with Image.open(output) as img:
             assert img.is_animated
             assert img.n_frames == 2
+
+
+class TestGlobalPalette:
+    def test_global_palette_shared_across_frames(self):
+        """All frames quantize to the same palette indices via _build_palette."""
+        frame1 = Image.new("RGB", (100, 100), (255, 0, 0))
+        frame2 = Image.new("RGB", (100, 100), (0, 0, 255))
+        palette_ref = _build_palette(frame1)
+
+        q1 = frame1.quantize(palette=palette_ref, dither=Image.Dither.NONE)
+        q2 = frame2.quantize(palette=palette_ref, dither=Image.Dither.NONE)
+
+        # Both should use the same palette object for mapping
+        assert q1.getpalette() == q2.getpalette()
+
+        # Frame 1 and 2 should use different indices but from the same palette
+        idx1 = set(q1.tobytes())
+        idx2 = set(q2.tobytes())
+        assert len(idx1) == 1  # solid red → single index
+        assert len(idx2) == 1  # solid blue → single index
+        assert idx1 != idx2  # different colors → different indices
+
+    def test_no_dithering_produces_clean_quantization(self, tmp_path):
+        """Solid-color frame quantizes to a single color (no dither noise)."""
+        img = Image.new("RGB", (100, 100), (40, 42, 54))
+        frames = [(img, 100)]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output)
+
+        with Image.open(output) as gif:
+            rgb = gif.convert("RGB")
+            colors = rgb.getcolors()
+            # With no dithering, a solid-color image should have exactly 1 color
+            assert len(colors) == 1
+
+    def test_palette_seeds_included(self):
+        """Seed colors not in the frame appear in the built palette."""
+        frame = Image.new("RGB", (100, 100), (0, 0, 0))
+        seeds = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+        palette_ref = _build_palette(frame, palette_seeds=seeds)
+
+        palette = palette_ref.getpalette()
+        palette_colors = set()
+        for i in range(0, len(palette), 3):
+            palette_colors.add((palette[i], palette[i + 1], palette[i + 2]))
+
+        for seed in seeds:
+            assert seed in palette_colors, f"Seed {seed} not found in palette"
+
+    def test_palette_seeds_survive_quantization(self, tmp_path):
+        """Seeded color renders correctly in a frame that uses it."""
+        # Frame 1: all red. Frame 2: all green (seeded but not in frame 1).
+        frame1 = Image.new("RGB", (100, 100), (255, 0, 0))
+        frame2 = Image.new("RGB", (100, 100), (0, 255, 0))
+        seeds = [(0, 255, 0)]
+        output = tmp_path / "test.gif"
+        save_gif([(frame1, 100), (frame2, 100)], output, palette_seeds=seeds)
+
+        with Image.open(output) as gif:
+            gif.seek(1)
+            rgb = gif.convert("RGB")
+            colors = rgb.getcolors()
+            # Frame 2 should render as exact green
+            assert len(colors) == 1
+            assert colors[0][1] == (0, 255, 0)
+
+    def test_colors_parameter(self, tmp_path):
+        """save_gif(..., colors=64) produces a valid animated GIF."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, colors=64)
+
+        with Image.open(output) as img:
+            assert img.format == "GIF"
+            assert img.is_animated
+            assert img.n_frames == 2
+
+    def test_colors_produces_smaller_file(self, tmp_path):
+        """Gradient frames: colors=64 file <= colors=256 file."""
+
+        # Create frames with many colors (gradient)
+        def gradient_frame():
+            img = Image.new("RGB", (200, 200))
+            for x in range(200):
+                for y in range(200):
+                    img.putpixel((x, y), (x % 256, y % 256, (x + y) % 256))
+            return (img, 100)
+
+        frames_256 = [gradient_frame(), gradient_frame()]
+        frames_64 = [gradient_frame(), gradient_frame()]
+
+        out_256 = tmp_path / "test_256.gif"
+        out_64 = tmp_path / "test_64.gif"
+
+        save_gif(frames_256, out_256, colors=256)
+        save_gif(frames_64, out_64, colors=64)
+
+        assert out_64.stat().st_size <= out_256.stat().st_size
 
 
 class TestGifsicleInvocation:

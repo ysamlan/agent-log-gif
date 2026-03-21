@@ -84,6 +84,7 @@ _MEDIA_KWARG_NAMES = (
     "spinner_time",
     "thinking_verbs",
     "shimmer",
+    "colors",
 )
 
 
@@ -106,6 +107,57 @@ def _normalize_hex_color(value: str | None, flag_name: str) -> str | None:
     return f"#{normalized.upper()}"
 
 
+def _palette_seed_colors(theme, transcript_source, shimmer, canvas_bg=None):
+    """Compute seed colors that must appear in the GIF palette.
+
+    Returns a list of RGB tuples covering theme colors, special UI colors,
+    and shimmer gradient stops so the global palette includes them even if
+    they don't appear in the first frame.
+    """
+    from agent_log_gif.chrome import MAC_TRAFFIC_COLORS
+    from agent_log_gif.spinner import (
+        CLAUDE_SHIMMER,
+        CODEX_SHIMMER,
+        SPINNER_COLOR,
+        TOOL_DONE_COLOR,
+        blend_rgb,
+    )
+
+    seeds = set()
+    # All theme colors
+    for attr in (
+        "background",
+        "foreground",
+        "comment",
+        "prompt_color",
+        "assistant_color",
+        "separator_color",
+        "titlebar_color",
+        "selection_color",
+    ):
+        seeds.add(theme.hex_to_rgb(getattr(theme, attr)))
+    # Canvas background (for rounded mac chrome)
+    if canvas_bg:
+        seeds.add(theme.hex_to_rgb(canvas_bg))
+    # Special colors
+    seeds.add(theme.hex_to_rgb(SPINNER_COLOR))
+    seeds.add(theme.hex_to_rgb(TOOL_DONE_COLOR))
+    for c in MAC_TRAFFIC_COLORS:
+        seeds.add(theme.hex_to_rgb(c))
+    # Shimmer gradient samples (16 stops per profile)
+    if shimmer:
+        profiles = [(SPINNER_COLOR, CLAUDE_SHIMMER)]
+        if transcript_source == "codex":
+            profiles.append((theme.comment, CODEX_SHIMMER))
+        for base, profile in profiles:
+            base_rgb = theme.hex_to_rgb(base)
+            highlight_rgb = theme.hex_to_rgb(profile.highlight_color)
+            for i in range(16):
+                t = (i / 15) * profile.max_intensity
+                seeds.add(blend_rgb(base_rgb, highlight_rgb, t))
+    return list(seeds)
+
+
 def _session_to_media(
     session_path,
     output_path,
@@ -125,6 +177,7 @@ def _session_to_media(
     spinner_time=None,
     thinking_verbs=None,
     shimmer=True,
+    colors=None,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -266,7 +319,15 @@ def _session_to_media(
     click.echo(f"Writing {output_path}...")
 
     if fmt == "gif":
-        save_gif(frames, output_path, size_limit_mb=GIFSICLE_SIZE_LIMIT_MB)
+        save_gif(
+            frames,
+            output_path,
+            size_limit_mb=GIFSICLE_SIZE_LIMIT_MB,
+            colors=colors,
+            palette_seeds=_palette_seed_colors(
+                theme, transcript_source, shimmer, canvas_bg
+            ),
+        )
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
 
@@ -640,6 +701,12 @@ def _media_options(fn):
                 default=True,
                 help="Enable/disable loading line shimmer effect (default: on).",
             ),
+            click.option(
+                "--colors",
+                type=int,
+                default=None,
+                help="GIF palette size, 2-256 (default: 256). Try 128 for smaller files.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -683,6 +750,7 @@ def local_cmd(
     spinner_time,
     thinking_verbs,
     shimmer,
+    colors,
     open_browser,
     limit,
 ):
@@ -818,6 +886,7 @@ def local_cmd(
             spinner_time=spinner_time,
             thinking_verbs=thinking_verbs,
             shimmer=shimmer,
+            colors=colors,
         ),
     )
 
@@ -867,6 +936,7 @@ def json_cmd(
     spinner_time,
     thinking_verbs,
     shimmer,
+    colors,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -912,6 +982,7 @@ def json_cmd(
             spinner_time=spinner_time,
             thinking_verbs=thinking_verbs,
             shimmer=shimmer,
+            colors=colors,
         ),
     )
 

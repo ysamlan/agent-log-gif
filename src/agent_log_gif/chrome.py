@@ -113,12 +113,12 @@ _MAC_TRAFFIC_Y = 18
 _MAC_TRAFFIC_X_START = 18
 _MAC_TRAFFIC_SPACING = 22
 _MAC_TRAFFIC_RADIUS = 6
-_MAC_TRAFFIC_COLORS = ("#FF5F56", "#FFBD2E", "#27C93F")
+MAC_TRAFFIC_COLORS = ("#FF5F56", "#FFBD2E", "#27C93F")
 
 
 def _draw_mac_controls(draw: ImageDraw.Draw, ss: int) -> None:
     """Draw macOS traffic-light buttons (close, minimize, maximize)."""
-    for i, hex_color in enumerate(_MAC_TRAFFIC_COLORS):
+    for i, hex_color in enumerate(MAC_TRAFFIC_COLORS):
         cx = _MAC_TRAFFIC_X_START * ss + i * _MAC_TRAFFIC_SPACING * ss
         cy = _MAC_TRAFFIC_Y * ss
         r = _MAC_TRAFFIC_RADIUS * ss

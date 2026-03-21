@@ -146,14 +146,23 @@ CLAUDE_SHIMMER = ShimmerProfile(
 )
 
 
+def blend_rgb(
+    a: tuple[int, int, int], b: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
+    """Linearly interpolate between two RGB tuples. t=0→a, t=1→b."""
+    t = max(0.0, min(1.0, t))
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+    )
+
+
 def blend_hex(color_a: str, color_b: str, t: float) -> str:
     """Linearly interpolate between two hex colors. t=0→a, t=1→b."""
-    t = max(0.0, min(1.0, t))
-    ra, ga, ba = TerminalTheme.hex_to_rgb(color_a)
-    rb, gb, bb = TerminalTheme.hex_to_rgb(color_b)
-    r = int(ra + (rb - ra) * t)
-    g = int(ga + (gb - ga) * t)
-    b = int(ba + (bb - ba) * t)
+    r, g, b = blend_rgb(
+        TerminalTheme.hex_to_rgb(color_a), TerminalTheme.hex_to_rgb(color_b), t
+    )
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
