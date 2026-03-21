@@ -109,14 +109,23 @@ class StatusFooter:
             self._frame_idx += 1
 
     def _shimmer_or_flat(
-        self, text: str, profile: "ShimmerProfile", elapsed_ms: int, flat_color: str,
+        self,
+        text: str,
+        profile: "ShimmerProfile",
+        elapsed_ms: int,
+        flat_color: str,
         base_color_override: str | None = None,
     ) -> StyledLine:
         """Return shimmered segments or a single flat-color segment."""
         if self._shimmer:
-            return list(shimmer_styled_segments(
-                text, profile, elapsed_ms, base_color_override=base_color_override,
-            ))
+            return list(
+                shimmer_styled_segments(
+                    text,
+                    profile,
+                    elapsed_ms,
+                    base_color_override=base_color_override,
+                )
+            )
         return [(text, flat_color)]
 
     def render_line(self) -> StyledLine:
@@ -126,19 +135,28 @@ class StatusFooter:
             if self._transcript_source == "codex":
                 elapsed = elapsed_ms // 1000
                 segments: StyledLine = [("\u2022 ", self._theme.comment)]
-                segments.extend(self._shimmer_or_flat(
-                    self._verb, CODEX_SHIMMER, elapsed_ms,
-                    self._theme.comment, base_color_override=self._theme.comment,
-                ))
+                segments.extend(
+                    self._shimmer_or_flat(
+                        self._verb,
+                        CODEX_SHIMMER,
+                        elapsed_ms,
+                        self._theme.comment,
+                        base_color_override=self._theme.comment,
+                    )
+                )
                 segments.append(
                     (f" ({elapsed}s \u00b7 esc to interrupt)", self._theme.comment)
                 )
                 return segments
             glyph = SPINNER_FRAMES[self._frame_idx % len(SPINNER_FRAMES)]
-            segments = list(self._shimmer_or_flat(
-                f"{glyph} {self._verb}\u2026", CLAUDE_SHIMMER, elapsed_ms,
-                SPINNER_COLOR,
-            ))
+            segments = list(
+                self._shimmer_or_flat(
+                    f"{glyph} {self._verb}\u2026",
+                    CLAUDE_SHIMMER,
+                    elapsed_ms,
+                    SPINNER_COLOR,
+                )
+            )
             segments.append((" (esc to interrupt)", self._theme.comment))
             return segments
         if self._state == "done":
@@ -175,6 +193,26 @@ def _compute_turn_duration(
 def _tool_done_line(text: str, theme: TerminalTheme) -> StyledLine:
     """Styled line for a completed tool call: green ● + tool name."""
     return [(f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR), (text, theme.comment)]
+
+
+def _tool_preview_text(text: str) -> str:
+    """Flatten multiline tool text for the single-row transient preview."""
+    parts = [part.strip() for part in text.splitlines()]
+    return " ".join(part for part in parts if part)
+
+
+def _append_tool_call_block(
+    buffer: list[StyledLine], text: str, theme: TerminalTheme
+) -> None:
+    """Append a committed tool call, preserving embedded newlines as rows."""
+    lines = text.splitlines() or [text]
+    if not lines:
+        return
+
+    first, *rest = lines
+    buffer.append(_tool_done_line(first, theme))
+    for line_text in rest:
+        buffer.append([("  ", theme.comment), (line_text, theme.comment)])
 
 
 def _elide_wrapped_lines(lines: list[str], max_lines: int) -> list[str]:
@@ -331,7 +369,7 @@ def generate_frames(
 
         # Commit pending tool call if next event isn't TOOL_RESULT
         if pending_tool_text is not None and event.type != EventType.TOOL_RESULT:
-            buffer.append(_tool_done_line(pending_tool_text, theme))
+            _append_tool_call_block(buffer, pending_tool_text, theme)
             pending_tool_text = None
 
         if event.type == EventType.USER_MESSAGE:
@@ -416,7 +454,7 @@ def generate_frames(
 
         elif event.type == EventType.TOOL_CALL:
             pending_tool_text = event.text
-            tool_text = event.text
+            tool_text = _tool_preview_text(event.text)
 
             def _blink_transient(i: int) -> list[StyledLine]:
                 color = theme.comment if (i // 3) % 2 == 0 else theme.background
@@ -435,12 +473,7 @@ def generate_frames(
 
         elif event.type == EventType.TOOL_RESULT:
             if pending_tool_text is not None:
-                buffer.append(
-                    [
-                        (f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR),
-                        (pending_tool_text, theme.comment),
-                    ]
-                )
+                _append_tool_call_block(buffer, pending_tool_text, theme)
                 pending_tool_text = None
             _snap_muted_block(
                 buffer,
@@ -465,12 +498,7 @@ def generate_frames(
 
     # Commit any remaining pending tool call
     if pending_tool_text is not None:
-        buffer.append(
-            [
-                (f"{ASSISTANT_CHAR} ", TOOL_DONE_COLOR),
-                (pending_tool_text, theme.comment),
-            ]
-        )
+        _append_tool_call_block(buffer, pending_tool_text, theme)
 
     # If footer is still thinking, mark done
     if footer.state == "thinking":

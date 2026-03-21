@@ -375,11 +375,11 @@ class TestIncrementalRendering:
         lines = [[(f"Line {i}", "#cdd6f4")] for i in range(5)]
 
         steps = [
-            (lines, None),       # no cursor
-            (lines, (4, 0)),     # cursor appears
-            (lines, (4, 3)),     # cursor moves right
-            (lines, (3, 0)),     # cursor moves to different row
-            (lines, None),       # cursor disappears
+            (lines, None),  # no cursor
+            (lines, (4, 0)),  # cursor appears
+            (lines, (4, 3)),  # cursor moves right
+            (lines, (3, 0)),  # cursor moves to different row
+            (lines, None),  # cursor disappears
         ]
 
         for i, (ln, cur) in enumerate(steps):

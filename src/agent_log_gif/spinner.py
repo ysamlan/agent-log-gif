@@ -191,12 +191,12 @@ def shimmer_styled_segments(
         i_pos = i + profile.padding
         dist = abs(i_pos - pos)
         if dist <= profile.band_half_width:
-            intensity = 0.5 * (
-                1.0 + math.cos(math.pi * dist / profile.band_half_width)
-            )
+            intensity = 0.5 * (1.0 + math.cos(math.pi * dist / profile.band_half_width))
         else:
             intensity = 0.0
-        colors.append(blend_hex(base, profile.highlight_color, intensity * profile.max_intensity))
+        colors.append(
+            blend_hex(base, profile.highlight_color, intensity * profile.max_intensity)
+        )
 
     # Coalesce adjacent same-color characters into segments
     segments: list[tuple[str, str]] = []

@@ -204,10 +204,14 @@ class TestBlendHex:
         assert 126 <= b <= 128
 
     def test_clamps_above_one(self):
-        assert blend_hex("#000000", "#ffffff", 1.5) == blend_hex("#000000", "#ffffff", 1.0)
+        assert blend_hex("#000000", "#ffffff", 1.5) == blend_hex(
+            "#000000", "#ffffff", 1.0
+        )
 
     def test_clamps_below_zero(self):
-        assert blend_hex("#000000", "#ffffff", -0.5) == blend_hex("#000000", "#ffffff", 0.0)
+        assert blend_hex("#000000", "#ffffff", -0.5) == blend_hex(
+            "#000000", "#ffffff", 0.0
+        )
 
 
 class TestShimmerStyledSegments:
@@ -229,12 +233,25 @@ class TestShimmerStyledSegments:
         assert a == b
 
     def test_different_elapsed_different_colors(self):
-        colors_0 = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 0, "#6272a4")]
-        colors_1 = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 500, "#6272a4")]
+        colors_0 = [
+            c
+            for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 0, "#6272a4")
+        ]
+        colors_1 = [
+            c
+            for _, c in shimmer_styled_segments(
+                "Working", CODEX_SHIMMER, 500, "#6272a4"
+            )
+        ]
         assert colors_0 != colors_1
 
     def test_codex_and_claude_differ(self):
-        codex = [c for _, c in shimmer_styled_segments("Working", CODEX_SHIMMER, 500, "#6272a4")]
+        codex = [
+            c
+            for _, c in shimmer_styled_segments(
+                "Working", CODEX_SHIMMER, 500, "#6272a4"
+            )
+        ]
         claude = [c for _, c in shimmer_styled_segments("Working", CLAUDE_SHIMMER, 500)]
         assert codex != claude
 
@@ -416,6 +433,46 @@ class TestToolCallBlink:
             for x in range(min(last_img.width, 50))
         )
         assert found, "Final frame should contain green bullet pixels"
+
+    def test_multiline_tool_call_renders_without_embedded_newlines_in_segments(self):
+        """Multiline tool calls split into rows instead of raw newline segments."""
+        from agent_log_gif.renderer import TerminalRenderer
+        from agent_log_gif.theme import TerminalTheme
+
+        class RecordingRenderer(TerminalRenderer):
+            def __init__(self, theme):
+                super().__init__(theme)
+                self.rendered_lines = []
+
+            def render_frame(self, lines):
+                self.rendered_lines.append(lines)
+                return super().render_frame(lines)
+
+        theme = TerminalTheme(rows=12)
+        renderer = RecordingRenderer(theme)
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(
+                type=EventType.TOOL_CALL,
+                text="Bash # Check inbox\ngog gmail count 'in:inbox'",
+            ),
+            ReplayEvent(type=EventType.TOOL_RESULT, text="21,892 messages in inbox."),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Done"),
+        ]
+
+        generate_frames(events, renderer=renderer)
+
+        for frame_lines in renderer.rendered_lines:
+            for line in frame_lines:
+                for text, _color in line:
+                    assert "\n" not in text
+
+        final_lines = [
+            "".join(text for text, _color in line)
+            for line in renderer.rendered_lines[-1]
+        ]
+        assert any("Bash # Check inbox" in line for line in final_lines)
+        assert any("gog gmail count 'in:inbox'" in line for line in final_lines)
 
 
 class TestGenerateFrames:

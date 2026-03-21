@@ -52,6 +52,7 @@ def _synthetic_events(num_turns: int) -> list[ReplayEvent]:
 # Per-operation breakdown instrumentation
 # ---------------------------------------------------------------------------
 
+
 def _render_frame_breakdown(self, lines, cursor_pos=None):
     """Instrumented render_frame that records per-operation timing."""
     timings = _render_frame_breakdown._timings
@@ -133,14 +134,17 @@ def _render_frame_breakdown(self, lines, cursor_pos=None):
     result = img.resize((self.image_width, self.image_height), Image.LANCZOS)
     t_resize = time.perf_counter() - t0
 
-    timings.append({
-        "copy": t_copy,
-        "text": t_text_total,
-        "rect": t_rect_total,
-        "resize": t_resize,
-        "total": t_copy + t_text_total + t_rect_total + t_resize,
-    })
+    timings.append(
+        {
+            "copy": t_copy,
+            "text": t_text_total,
+            "rect": t_rect_total,
+            "resize": t_resize,
+            "total": t_copy + t_text_total + t_rect_total + t_resize,
+        }
+    )
     return result
+
 
 _render_frame_breakdown._timings = []
 
@@ -171,33 +175,46 @@ def _run_breakdown(num_turns: int) -> None:
     keys = ["copy", "text", "rect", "resize", "total"]
     sums = {k: sum(t[k] for t in timings) for k in keys}
     avgs = {k: sums[k] / n * 1000 for k in keys}
-    p95s = {
-        k: sorted(t[k] for t in timings)[int(n * 0.95)] * 1000 for k in keys
-    }
+    p95s = {k: sorted(t[k] for t in timings)[int(n * 0.95)] * 1000 for k in keys}
 
     total_sum = sums["total"]
     pcts = {k: sums[k] / total_sum * 100 if total_sum > 0 else 0 for k in keys}
 
     print(f"\nrender_frame() breakdown ({n} frames, {num_turns} turns)")
     print("=" * 72)
-    print(f"{'Operation':<15} {'Sum(s)':>8} {'Avg(ms)':>9} {'P95(ms)':>9} {'% total':>9}")
+    print(
+        f"{'Operation':<15} {'Sum(s)':>8} {'Avg(ms)':>9} {'P95(ms)':>9} {'% total':>9}"
+    )
     print("-" * 72)
     for k in ["copy", "text", "rect", "resize"]:
-        label = {"copy": "Image.copy", "text": "draw.text", "rect": "draw.rect", "resize": "resize"}[k]
-        print(f"{label:<15} {sums[k]:8.3f} {avgs[k]:9.3f} {p95s[k]:9.3f} {pcts[k]:8.1f}%")
+        label = {
+            "copy": "Image.copy",
+            "text": "draw.text",
+            "rect": "draw.rect",
+            "resize": "resize",
+        }[k]
+        print(
+            f"{label:<15} {sums[k]:8.3f} {avgs[k]:9.3f} {p95s[k]:9.3f} {pcts[k]:8.1f}%"
+        )
     print("-" * 72)
-    print(f"{'TOTAL':<15} {sums['total']:8.3f} {avgs['total']:9.3f} {p95s['total']:9.3f} {pcts['total']:8.1f}%")
+    print(
+        f"{'TOTAL':<15} {sums['total']:8.3f} {avgs['total']:9.3f} {p95s['total']:9.3f} {pcts['total']:8.1f}%"
+    )
     print("=" * 72)
 
     # Kill criteria check
     resize_pct = pcts["resize"]
     text_pct = pcts["text"]
-    print(f"\nKill criteria: resize={resize_pct:.1f}% (threshold >60%), "
-          f"text={text_pct:.1f}% (threshold <25%)")
+    print(
+        f"\nKill criteria: resize={resize_pct:.1f}% (threshold >60%), "
+        f"text={text_pct:.1f}% (threshold <25%)"
+    )
     if resize_pct > 60 and text_pct < 25:
         print("KILL: resize dominates — incremental rendering won't help much.")
     else:
-        print("PROCEED: draw.text() is a significant cost; incremental rendering viable.")
+        print(
+            "PROCEED: draw.text() is a significant cost; incremental rendering viable."
+        )
 
 
 def _profile_run(

@@ -116,6 +116,32 @@ class TestLoglinesToTimeline:
         assert events[0].type == EventType.TOOL_CALL
         assert events[0].text == "Bash"
 
+    def test_tool_use_preserves_multiline_command_text(self):
+        """Tool summaries keep embedded newlines for multiline commands."""
+        loglines = [
+            {
+                "type": "assistant",
+                "timestamp": "T",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Bash",
+                            "id": "123",
+                            "input": {
+                                "command": "# Check inbox\ngog gmail count 'in:inbox'"
+                            },
+                        }
+                    ],
+                },
+            }
+        ]
+        events = loglines_to_timeline(loglines)
+        assert len(events) == 1
+        assert events[0].type == EventType.TOOL_CALL
+        assert events[0].text == "Bash # Check inbox\ngog gmail count 'in:inbox'"
+
     def test_tool_result_produces_tool_result_event(self):
         """Tool result blocks become TOOL_RESULT events."""
         loglines = [
