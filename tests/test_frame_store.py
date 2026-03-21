@@ -123,19 +123,19 @@ class TestFrameStore:
         assert isinstance(raw_bytes, bytes)
         assert raw_bytes == orig.tobytes()
 
-    def test_uses_lz4_not_zlib(self):
-        """Stored bytes must be LZ4 frame format, not zlib."""
-        import lz4.frame
+    def test_uses_zstd_not_zlib(self):
+        """Stored bytes must be zstd format, not zlib."""
+        import pyzstd
 
         store = FrameStore()
         store.append(_make_img("red"), 100)
         compressed_data = store._frames[0][0]
-        # LZ4 frame format starts with magic number 0x184D2204 (little-endian)
-        assert compressed_data[:4] == b"\x04\x22\x4d\x18", (
-            "Stored data does not have LZ4 frame magic number"
+        # zstd frame starts with magic number 0xFD2FB528 (little-endian)
+        assert compressed_data[:4] == b"\x28\xb5\x2f\xfd", (
+            "Stored data does not have zstd magic number"
         )
-        # Verify it's valid LZ4 by decompressing
-        raw = lz4.frame.decompress(compressed_data)
+        # Verify it's valid zstd by decompressing
+        raw = pyzstd.decompress(compressed_data)
         assert raw == _make_img("red").tobytes()
 
     def test_large_frame_roundtrip(self):

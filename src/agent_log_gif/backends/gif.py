@@ -54,6 +54,7 @@ def save_gif(
     colors: int | None = None,
     palette_seeds: list[tuple[int, int, int]] | None = None,
     gifsicle: bool = True,
+    lossy: int | None = None,
 ) -> Path:
     """Save frames as an animated GIF with frame differencing.
 
@@ -72,6 +73,10 @@ def save_gif(
                 for transparency, so effective max is 255. None means 256.
         palette_seeds: RGB tuples to guarantee in the palette.
         gifsicle: Whether to post-process with gifsicle (default True).
+        lossy: Lossy threshold (0-200). Pixels that changed by less than
+               this per-channel value are treated as unchanged, producing
+               smaller files at the cost of visual fidelity. 0 = lossless.
+               Default None means let gifsicle handle lossy (--lossy=80).
 
     Returns:
         Path to the written GIF file.
@@ -81,6 +86,7 @@ def save_gif(
     """
     # Reserve one palette slot for the transparent index
     colors = min((colors or 256), 255)
+    lossy = lossy or 0
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -109,38 +115,53 @@ def save_gif(
     # Get the palette bytes for reuse
     palette_bytes = first_q.getpalette()
 
-    # Previous frame pixel data for diffing (as flat bytes for speed)
+    # Previous frame data for diffing
     prev_data = first_q.tobytes()
+    prev_rgb = first_img
     width, height = first_q.size
 
     def _make_diff_frames():
         """Yield diff frames: only changed pixels, rest transparent.
 
-        Uses Pillow's C-level ImageChops to compute the diff mask (~0.6 ms
-        per 740x650 frame). Both frames share the same global palette, so
-        comparing raw P-mode byte values (palette indices) is correct.
+        Uses Pillow's C-level ImageChops to compute the diff mask.
+        When lossy > 0, compares in RGB space with a per-channel tolerance,
+        treating nearly-identical pixels as unchanged for smaller files.
         """
-        nonlocal prev_data
+        nonlocal prev_data, prev_rgb
 
         # Reusable transparent fill image
         trans_l = Image.new("L", (width, height), transparent_idx)
-        # Precomputed LUT: 0->0, nonzero->255 (avoids per-frame lambda)
-        change_lut = [0] + [255] * 255
+        # Precomputed LUT for exact diff: 0->0, nonzero->255
+        exact_lut = [0] + [255] * 255
+
+        if lossy > 0:
+            # Tolerance LUT: differences <= lossy are treated as unchanged
+            tolerance_lut = [0] * min(lossy + 1, 256) + [255] * max(256 - lossy - 1, 0)
 
         for img, _ in frame_iter:
             curr_q = img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
             curr_data = curr_q.tobytes()
 
-            # Treat P-mode index bytes as L-mode for C-speed comparison
-            prev_l = Image.frombytes("L", (width, height), prev_data)
-            curr_l = Image.frombytes("L", (width, height), curr_data)
-
-            # difference(): 0 where same, nonzero where different
-            diff_l = ImageChops.difference(prev_l, curr_l)
-            # Binary mask: 0 where unchanged, 255 where changed
-            mask = diff_l.point(change_lut)
+            if lossy > 0:
+                # Lossy: compare in RGB space with per-channel tolerance.
+                # A pixel is "changed" only if ANY channel differs by > lossy.
+                # All ops are C-level Pillow.
+                r1, g1, b1 = prev_rgb.split()
+                r2, g2, b2 = img.split()
+                dr = ImageChops.difference(r1, r2).point(tolerance_lut)
+                dg = ImageChops.difference(g1, g2).point(tolerance_lut)
+                db = ImageChops.difference(b1, b2).point(tolerance_lut)
+                # Union: changed if any channel exceeds threshold
+                mask = ImageChops.lighter(ImageChops.lighter(dr, dg), db)
+            else:
+                # Exact: compare palette indices (faster, no RGB split needed)
+                prev_l = Image.frombytes("L", (width, height), prev_data)
+                curr_l = Image.frombytes("L", (width, height), curr_data)
+                diff_l = ImageChops.difference(prev_l, curr_l)
+                mask = diff_l.point(exact_lut)
 
             # composite: changed pixels from curr, unchanged from transparent
+            curr_l = Image.frombytes("L", (width, height), curr_data)
             result_l = Image.composite(curr_l, trans_l, mask)
 
             # Wrap as P-mode with the global palette
@@ -150,6 +171,7 @@ def save_gif(
             yield diff_img
 
             prev_data = curr_data
+            prev_rgb = img
 
     # Set transparency on first frame (fully opaque, but Pillow needs
     # the GCE block for consistency)
@@ -167,14 +189,20 @@ def save_gif(
 
     if gifsicle:
         _optimize_with_gifsicle(
-            output_path, size_limit_mb=size_limit_mb, colors=colors
+            output_path,
+            size_limit_mb=size_limit_mb,
+            colors=colors,
+            lossy=lossy,
         )
 
     return output_path
 
 
 def _optimize_with_gifsicle(
-    gif_path: Path, size_limit_mb: int = 200, colors: int = 256
+    gif_path: Path,
+    size_limit_mb: int = 200,
+    colors: int = 256,
+    lossy: int = 0,
 ) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
     if not shutil.which("gifsicle"):
@@ -192,11 +220,15 @@ def _optimize_with_gifsicle(
     optimized_path = gif_path.with_suffix(".opt.gif")
 
     try:
-        cmd = [
-            "gifsicle",
-            "-O2",
-            "--lossy=80",
-        ]
+        cmd = ["gifsicle", "-O2"]
+        # If the caller already did lossy diffing, use a gentler gifsicle
+        # lossy setting (or none). If no lossy was done, let gifsicle do it.
+        if lossy == 0:
+            cmd.append("--lossy=80")
+        elif lossy < 30:
+            # Small tolerance already applied — light gifsicle lossy on top
+            cmd.append("--lossy=40")
+        # else: lossy >= 30, skip gifsicle lossy (we did enough)
         if colors < 256:
             cmd += [f"--colors={colors}"]
         cmd += [str(gif_path), "-o", str(optimized_path)]

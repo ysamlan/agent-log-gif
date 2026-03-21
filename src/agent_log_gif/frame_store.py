@@ -2,9 +2,9 @@
 
 Replaces the naive ``list[tuple[Image, int]]`` that held every frame as an
 uncompressed PIL Image (~1.35 MB each). Terminal renders compress extremely
-well with LZ4 (~242:1 for solid-color regions), so 1000 frames ≈ 6 MB
-instead of 1.35 GB. LZ4 is 14x faster for compression and 3.7x faster for
-decompression compared to zlib level 1.
+well with zstd level 1 (~300:1 for solid-color regions), so 1000 frames ≈
+5 MB instead of 1.35 GB. zstd level 1 is nearly as fast as LZ4 with
+significantly better compression ratios.
 
 Frames are stored as (compressed_bytes, duration_ms, width, height) tuples.
 PIL Images are reconstructed on demand during iteration.
@@ -14,14 +14,17 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-import lz4.frame
+import pyzstd
 from PIL import Image
+
+# Level 1: fastest zstd, comparable speed to LZ4 but better ratios
+_ZSTD_LEVEL = 1
 
 
 class FrameStore:
     """Memory-efficient store for animation frames.
 
-    Stores frames as LZ4-compressed raw RGB bytes with metadata.
+    Stores frames as zstd-compressed raw RGB bytes with metadata.
     Reconstructs PIL Images on demand during iteration or random access.
     """
 
@@ -31,14 +34,14 @@ class FrameStore:
 
     @staticmethod
     def _compress(img: Image.Image) -> tuple[bytes, int, int]:
-        """Compress a PIL Image to LZ4 bytes, return (data, width, height)."""
+        """Compress a PIL Image to zstd bytes, return (data, width, height)."""
         w, h = img.size
-        return lz4.frame.compress(img.tobytes()), w, h
+        return pyzstd.compress(img.tobytes(), _ZSTD_LEVEL), w, h
 
     @staticmethod
     def _decompress(data: bytes, w: int, h: int) -> Image.Image:
         """Reconstruct a PIL Image from compressed bytes."""
-        return Image.frombytes("RGB", (w, h), lz4.frame.decompress(data))
+        return Image.frombytes("RGB", (w, h), pyzstd.decompress(data))
 
     def append(self, img: Image.Image, duration_ms: int) -> None:
         """Add a frame. The PIL Image is compressed immediately."""
@@ -75,7 +78,7 @@ class FrameStore:
     def raw_iter(self) -> Iterator[tuple[bytes, int]]:
         """Yield (raw_rgb_bytes, duration_ms) without PIL reconstruction."""
         for data, dur, _, _ in self._frames:
-            yield lz4.frame.decompress(data), dur
+            yield pyzstd.decompress(data), dur
 
     def durations(self) -> list[int]:
         """Return list of all frame durations without decompressing images."""

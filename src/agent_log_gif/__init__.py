@@ -89,6 +89,7 @@ _MEDIA_KWARG_NAMES = (
     "colors",
     "parallel",
     "gifsicle",
+    "lossy",
 )
 
 
@@ -187,6 +188,7 @@ def _session_to_media(
     colors=None,
     parallel=0,
     gifsicle=True,
+    lossy=None,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -338,6 +340,7 @@ def _session_to_media(
                 theme, transcript_source, shimmer, canvas_bg
             ),
             gifsicle=gifsicle,
+            lossy=lossy,
         )
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
@@ -731,6 +734,14 @@ def _media_options(fn):
                 help="Enable/disable gifsicle post-processing (default: on). "
                 "Disabling produces larger GIFs but skips the gifsicle step.",
             ),
+            click.option(
+                "--lossy",
+                type=int,
+                default=None,
+                help="Lossy tolerance (0-200, default: off). Treats pixels that "
+                "changed by less than this per-channel value as unchanged, "
+                "producing smaller files. Try 30 for a good size/quality balance.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -777,6 +788,7 @@ def local_cmd(
     colors,
     parallel,
     gifsicle,
+    lossy,
     open_browser,
     limit,
 ):
@@ -915,6 +927,7 @@ def local_cmd(
             colors=colors,
             parallel=parallel,
             gifsicle=gifsicle,
+            lossy=lossy,
         ),
     )
 
@@ -967,6 +980,7 @@ def json_cmd(
     colors,
     parallel,
     gifsicle,
+    lossy,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -1015,6 +1029,7 @@ def json_cmd(
             colors=colors,
             parallel=parallel,
             gifsicle=gifsicle,
+            lossy=lossy,
         ),
     )
 
