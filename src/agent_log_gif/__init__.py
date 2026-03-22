@@ -310,18 +310,19 @@ def _session_to_media(
 
     bar_width = 20
 
-    def _report_turn(turn: int, total: int) -> None:
+    def _report_progress(done: int, total: int) -> None:
         if total <= 1:
             return
-        filled = bar_width * turn // total
+        filled = bar_width * done // total
         bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
-        click.echo(f"\r  {bar} {turn}/{total}", nl=turn == total)
+        click.echo(f"\r  {bar} {done}/{total}", nl=done == total)
 
     frames = generate_frames(
         selected_events,
         renderer=renderer,
         transcript_source=transcript_source,
-        on_turn=_report_turn,
+        on_turn=_report_progress,
+        on_progress=_report_progress,
         parallel=parallel,
         **anim_kwargs,
     )

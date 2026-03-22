@@ -809,7 +809,9 @@ class TestGenerateFrames:
         ]
         reported = []
         generate_frames(
-            events, on_turn=lambda turn, total: reported.append((turn, total))
+            events,
+            parallel=1,
+            on_turn=lambda turn, total: reported.append((turn, total)),
         )
         assert reported == [(1, 2), (2, 2)]
 
@@ -821,7 +823,9 @@ class TestGenerateFrames:
         ]
         reported = []
         generate_frames(
-            events, on_turn=lambda turn, total: reported.append((turn, total))
+            events,
+            parallel=1,
+            on_turn=lambda turn, total: reported.append((turn, total)),
         )
         assert reported == [(1, 1)]
 
@@ -902,11 +906,29 @@ class TestParallelRendering:
         assert last_ms >= 1000
 
     def test_parallel_progress_callback(self):
+        """on_progress fires per-frame during parallel rendering."""
         events = [
             ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
             ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
             ReplayEvent(type=EventType.USER_MESSAGE, text="Bye"),
             ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="See ya"),
+        ]
+        reported = []
+        frames = generate_frames(
+            events,
+            parallel=4,
+            on_progress=lambda done, total: reported.append((done, total)),
+            **self._kwargs(),
+        )
+        # Should fire once per frame, final call has done == total
+        assert len(reported) == len(frames)
+        assert reported[-1][0] == reported[-1][1]
+
+    def test_parallel_suppresses_on_turn(self):
+        """on_turn is suppressed in parallel mode (spec capture is instant)."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="Hello"),
         ]
         reported = []
         generate_frames(
@@ -915,7 +937,7 @@ class TestParallelRendering:
             on_turn=lambda t, n: reported.append((t, n)),
             **self._kwargs(),
         )
-        assert reported == [(1, 2), (2, 2)]
+        assert reported == []
 
     def test_parallel_with_tool_events(self):
         events = [

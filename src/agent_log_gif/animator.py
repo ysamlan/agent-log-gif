@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import random
 import textwrap
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -344,6 +345,7 @@ def _parallel_render(
     durations: list[int],
     renderer: TerminalRenderer,
     workers: int,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> FrameStore:
     """Render frame specs in parallel using ThreadPoolExecutor.
 
@@ -359,6 +361,10 @@ def _parallel_render(
     spec_durs = list(zip(specs, durations))
     chunks = [spec_durs[i : i + chunk_size] for i in range(0, n, chunk_size)]
 
+    # Thread-safe counter for progress reporting
+    counter = threading.Lock()
+    done_count = [0]
+
     def _render_chunk(chunk):
         r = TerminalRenderer(
             renderer.theme,
@@ -372,6 +378,10 @@ def _parallel_render(
             img = r.render_frame(lines, cursor_pos)
             data, w, h = FrameStore._compress(img)
             compressed.append((data, dur, w, h))
+            if on_progress is not None:
+                with counter:
+                    done_count[0] += 1
+                    on_progress(done_count[0], n)
         return compressed
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -395,6 +405,7 @@ def generate_frames(
     on_turn: Callable[[int, int], None] | None = None,
     shimmer: bool = True,
     parallel: int = 0,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> FrameStore:
     """Convert replay events into animated frames.
 
@@ -438,6 +449,9 @@ def generate_frames(
         _real_renderer = renderer
         renderer = _CapturingRenderer(_real_renderer)
         frames = _DeferredFrameStore()
+        # Suppress on_turn in parallel mode — spec capture is near-instant
+        # so the turn bar is meaningless. on_progress fires during the real render.
+        on_turn = None
     else:
         frames = FrameStore()
     # Persistent text buffer (list of styled lines) that grows over time
@@ -628,7 +642,11 @@ def generate_frames(
     # Parallel: render all captured specs using thread pool
     if parallel > 1:
         return _parallel_render(
-            renderer._specs, frames._durations, _real_renderer, parallel
+            renderer._specs,
+            frames._durations,
+            _real_renderer,
+            parallel,
+            on_progress=on_progress,
         )
 
     return frames
