@@ -868,7 +868,7 @@ def local_cmd(
                 questionary.Choice("MP4 (requires ffmpeg)", value="mp4"),
                 questionary.Choice("AVIF (requires ffmpeg)", value="avif"),
             ],
-            default="GIF (default)",
+            default="gif",
         ).ask()
         if fmt is None:
             return
@@ -883,7 +883,7 @@ def local_cmd(
                 questionary.Choice("Linux / GNOME", value="linux"),
                 questionary.Choice("None", value="none"),
             ],
-            default="macOS (default)",
+            default="mac",
         ).ask()
         if chrome is None:
             return
@@ -897,7 +897,7 @@ def local_cmd(
                 questionary.Choice("+ Tool calls and results", value="tools"),
                 questionary.Choice("Everything (tools + thinking)", value="all"),
             ],
-            default="Conversation only (default)",
+            default="",
         ).ask()
         if show is None:
             return
@@ -1137,7 +1137,12 @@ def _open_file(path):
     elif sys.platform == "win32":
         os.startfile(path)
     else:
-        subprocess.run(["xdg-open", path])
+        try:
+            subprocess.run(["xdg-open", path])
+        except FileNotFoundError:
+            click.echo(
+                f"Can't auto-open file (xdg-open not found). Look for it at: {path}"
+            )
 
 
 def main():

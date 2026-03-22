@@ -183,3 +183,151 @@ class TestJsonCommand:
 
         assert opened == [str(output)]
         assert run_calls == []
+
+    def test_open_file_warns_when_xdg_open_missing(self, tmp_path, monkeypatch):
+        """Missing xdg-open prints a warning instead of crashing."""
+        output = tmp_path / "test.gif"
+
+        monkeypatch.setattr(agent_log_gif.sys, "platform", "linux")
+        monkeypatch.setattr(
+            agent_log_gif.subprocess,
+            "run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                FileNotFoundError(2, "No such file or directory", "xdg-open")
+            ),
+        )
+
+        # Should not raise — just prints a warning
+        agent_log_gif._open_file(output)
+
+
+class TestLocalCommand:
+    """Tests for the interactive `local` command with mocked questionary prompts."""
+
+    def _fake_select(self, answers):
+        """Return a patched questionary.select that yields answers in order.
+
+        Each call to select(...).ask() pops the next value from *answers*.
+        """
+        it = iter(answers)
+
+        class FakeQuestion:
+            def __init__(self, *a, **kw):
+                pass
+
+            def ask(self):
+                return next(it)
+
+        def _select(*args, **kwargs):
+            return FakeQuestion()
+
+        return _select
+
+    def test_local_walks_through_interactive_prompts(self, tmp_path, monkeypatch):
+        """local command uses questionary prompts and produces output."""
+        # Create a fake session file the picker will "select"
+        fixture = Path(__file__).parent / "sample_session.jsonl"
+        output = tmp_path / "out.gif"
+
+        # Fake having only a codex folder (skip source prompt)
+        monkeypatch.setattr(
+            agent_log_gif, "find_local_sessions", lambda *a, **kw: [(fixture, "hi")]
+        )
+        fake_home = tmp_path / "home"
+        codex_dir = fake_home / ".codex" / "sessions"
+        codex_dir.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        # With -o, format prompt is skipped. Remaining prompts:
+        # session picker → fixture, chrome → mac, show → "" (conversation only)
+        monkeypatch.setattr(
+            agent_log_gif.questionary,
+            "select",
+            self._fake_select([fixture, "mac", ""]),
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["local", "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert output.exists()
+        with Image.open(output) as img:
+            assert img.format == "GIF"
+            assert img.is_animated
+
+    def test_local_cancel_at_session_picker_exits_cleanly(self, tmp_path, monkeypatch):
+        """Pressing Ctrl-C (None from .ask()) at session picker exits without error."""
+        fixture = Path(__file__).parent / "sample_session.jsonl"
+
+        monkeypatch.setattr(
+            agent_log_gif, "find_local_sessions", lambda *a, **kw: [(fixture, "hi")]
+        )
+        fake_home = tmp_path / "home"
+        codex_dir = fake_home / ".codex" / "sessions"
+        codex_dir.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        # Return None (user cancelled) at the session picker
+        monkeypatch.setattr(
+            agent_log_gif.questionary,
+            "select",
+            self._fake_select([None]),
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["local"])
+
+        assert result.exit_code == 0
+        assert "No session selected" in result.output
+
+    def test_local_no_sessions_found(self, tmp_path, monkeypatch):
+        """Shows message when no sessions exist."""
+        fake_home = tmp_path / "home"
+        codex_dir = fake_home / ".codex" / "sessions"
+        codex_dir.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        monkeypatch.setattr(agent_log_gif, "find_local_sessions", lambda *a, **kw: [])
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["local"])
+
+        assert result.exit_code == 0
+        assert "No" in result.output and "sessions found" in result.output
+
+    def test_local_default_values_dont_crash(self, tmp_path, monkeypatch):
+        """Questionary default= values match Choice values (regression test)."""
+        import questionary as q
+
+        # Verify all three selects accept their default without raising
+        for choices, default in [
+            (
+                [
+                    q.Choice("GIF (default)", value="gif"),
+                    q.Choice("MP4 (requires ffmpeg)", value="mp4"),
+                    q.Choice("AVIF (requires ffmpeg)", value="avif"),
+                ],
+                "gif",
+            ),
+            (
+                [
+                    q.Choice("macOS (default)", value="mac"),
+                    q.Choice("macOS square corners", value="mac-square"),
+                    q.Choice("Windows 11", value="windows"),
+                    q.Choice("Linux / GNOME", value="linux"),
+                    q.Choice("None", value="none"),
+                ],
+                "mac",
+            ),
+            (
+                [
+                    q.Choice("Conversation only (default)", value=""),
+                    q.Choice("+ Tool call names", value="calls"),
+                    q.Choice("+ Tool calls and results", value="tools"),
+                    q.Choice("Everything (tools + thinking)", value="all"),
+                ],
+                "",
+            ),
+        ]:
+            # This raises ValueError if default doesn't match a choice value
+            q.select("test", choices=choices, default=default)
