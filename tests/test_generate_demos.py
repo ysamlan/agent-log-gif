@@ -49,6 +49,12 @@ def test_readme_embeds_avif_demo():
     assert "![demo](demo.avif)" in readme
 
 
+def test_demo_session_uses_reserved_example_email():
+    session = (ROOT / "scripts" / "demo_session.jsonl").read_text(encoding="utf-8")
+    assert "user@gmail.com" not in session
+    assert "user@example.com" in session
+
+
 def test_windows_codex_demo_uses_avif_output():
     module = _load_generate_demos_module()
     windows_demo = module.DEMOS[1]

@@ -1,10 +1,12 @@
 """Tests for CLI commands."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from click.testing import CliRunner
 from PIL import Image
 
+import agent_log_gif
 from agent_log_gif import cli
 
 
@@ -127,3 +129,57 @@ class TestJsonCommand:
         assert result.exit_code == 0, result.output
         assert "ignored for AVIF" not in result.output
         assert output.exists()
+
+    def test_fetch_url_to_tempfile_uses_unique_tempfile(self, tmp_path, monkeypatch):
+        """Fetched URL input should not overwrite a predictable temp path."""
+
+        class FakeResponse:
+            text = '{"type":"summary","summary":"ok"}\n'
+
+            def raise_for_status(self):
+                return None
+
+        existing = tmp_path / "claude-url-session.jsonl"
+        existing.write_text("sentinel", encoding="utf-8")
+
+        monkeypatch.setattr(
+            agent_log_gif.httpx, "get", lambda *args, **kwargs: FakeResponse()
+        )
+        monkeypatch.setattr(
+            agent_log_gif.tempfile,
+            "gettempdir",
+            lambda: str(tmp_path),
+        )
+
+        fetched = agent_log_gif.fetch_url_to_tempfile(
+            "https://example.com/session.jsonl"
+        )
+
+        assert fetched != existing
+        assert fetched.suffix == ".jsonl"
+        assert fetched.read_text(encoding="utf-8") == FakeResponse.text
+        assert existing.read_text(encoding="utf-8") == "sentinel"
+
+    def test_open_file_on_windows_uses_startfile(self, tmp_path, monkeypatch):
+        """Windows open path should bypass shell command interpolation."""
+        opened = []
+        run_calls = []
+        output = tmp_path / "%COMSPEC%.gif"
+
+        monkeypatch.setattr(agent_log_gif.sys, "platform", "win32")
+        monkeypatch.setattr(
+            agent_log_gif,
+            "os",
+            SimpleNamespace(startfile=lambda path: opened.append(path)),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            agent_log_gif.subprocess,
+            "run",
+            lambda *args, **kwargs: run_calls.append((args, kwargs)),
+        )
+
+        agent_log_gif._open_file(output)
+
+        assert opened == [str(output)]
+        assert run_calls == []

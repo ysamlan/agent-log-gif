@@ -1,5 +1,6 @@
 """Convert Claude Code or Codex session logs to animated GIFs."""
 
+import os
 import platform
 import re
 import subprocess
@@ -409,11 +410,17 @@ def fetch_url_to_tempfile(url):
 
     # Extract a name from the URL for the temp file
     url_name = Path(url_path).stem or "session"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", url_name).strip("-.") or "session"
 
-    temp_dir = Path(tempfile.gettempdir())
-    temp_file = temp_dir / f"claude-url-{url_name}{suffix}"
-    temp_file.write_text(response.text, encoding="utf-8")
-    return temp_file
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        prefix=f"claude-url-{safe_name}-",
+        suffix=suffix,
+        delete=False,
+    ) as temp_file:
+        temp_file.write(response.text)
+        return Path(temp_file.name)
 
 
 def resolve_credentials(token, org_uuid):
@@ -1128,8 +1135,7 @@ def _open_file(path):
     if sys.platform == "darwin":
         subprocess.run(["open", path])
     elif sys.platform == "win32":
-        # start treats first quoted arg as window title; empty "" avoids that
-        subprocess.run(f'start "" "{path}"', shell=True)
+        os.startfile(path)
     else:
         subprocess.run(["xdg-open", path])
 

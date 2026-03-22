@@ -274,7 +274,8 @@ def _profile_run(
 
     from agent_log_gif.backends.gif import save_gif
 
-    tmp = Path(tempfile.mktemp(suffix=".gif"))
+    with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp_file:
+        tmp = Path(tmp_file.name)
     t_save_start = time.perf_counter()
     try:
         save_gif(frames, tmp)
