@@ -12,9 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install media tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg gifsicle
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Set up Python
@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
       - name: Install Just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@v3
       - name: Lint
         run: just lint-check
 
@@ -38,15 +38,15 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install media tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg gifsicle
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install media tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg gifsicle
+        run: brew install ffmpeg
       - name: Install media tools (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg gifsicle -y
+        run: choco install ffmpeg -y
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Set up Python ${{ matrix.python-version }}

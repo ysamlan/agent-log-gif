@@ -276,3 +276,70 @@ class TestGifsicleInvocation:
         assert "--lossy=80" in recorded["cmd"]
         assert recorded["stderr"] is None
         assert recorded["check"] is True
+
+
+class TestGifsicleIntegration:
+    """Integration tests that run the real gifsicle binary.
+
+    These verify that gifsicle-bin provides a working gifsicle on PATH
+    and that save_gif successfully optimizes GIFs by default.
+    """
+
+    def test_gifsicle_bin_provides_gifsicle(self):
+        """gifsicle-bin puts a working gifsicle on PATH."""
+        import shutil
+
+        path = shutil.which("gifsicle")
+        assert path is not None, (
+            "gifsicle not found on PATH — gifsicle-bin may not be installed"
+        )
+        result = subprocess.run([path, "--version"], capture_output=True)
+        assert result.returncode == 0
+
+    def test_save_gif_optimizes_by_default(self, tmp_path):
+        """save_gif with default gifsicle=True produces a valid, optimized GIF."""
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output)  # gifsicle=True by default
+
+        assert output.exists()
+        with Image.open(output) as gif:
+            assert gif.is_animated
+            assert gif.n_frames == 3
+
+    def test_gifsicle_optimization_reduces_size(self, tmp_path):
+        """gifsicle post-processing produces a smaller file than without."""
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+            make_frame("red"),
+        ]
+        optimized = tmp_path / "optimized.gif"
+        unoptimized = tmp_path / "unoptimized.gif"
+        save_gif(frames, optimized, gifsicle=True)
+        save_gif(frames, unoptimized, gifsicle=False)
+
+        assert optimized.stat().st_size <= unoptimized.stat().st_size
+
+    def test_save_gif_works_without_gifsicle(self, monkeypatch, tmp_path):
+        """GIF generation succeeds when gifsicle is not on PATH."""
+        monkeypatch.setattr(
+            "agent_log_gif.backends.gif.shutil.which", lambda name: None
+        )
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=True)  # enabled but not available
+
+        assert output.exists()
+        with Image.open(output) as gif:
+            assert gif.is_animated
+            assert gif.n_frames == 3
