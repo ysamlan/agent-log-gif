@@ -605,20 +605,30 @@ def cli():
 
 
 class _LazyHelp:
-    """Defer tool-status computation until help text is actually displayed."""
+    """Defer tool-status computation until help text is actually displayed.
+
+    Click (and Python's inspect.cleandoc) call string methods like
+    expandtabs/split/partition directly on the help object, so we proxy
+    all attribute access to the resolved string.
+    """
 
     def __init__(self, base: str):
         self._base = base
         self._full: str | None = None
 
-    def __str__(self) -> str:
+    def _resolve(self) -> str:
         if self._full is None:
             self._full = self._base.rstrip() + "\n" + _tool_status()
         return self._full
 
-    # Click checks truthiness and calls format_help which uses str()
+    def __str__(self) -> str:
+        return self._resolve()
+
     def __bool__(self) -> bool:
         return True
+
+    def __getattr__(self, name: str):
+        return getattr(self._resolve(), name)
 
 
 cli.help = _LazyHelp(cli.help)
