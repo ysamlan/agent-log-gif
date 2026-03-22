@@ -10,7 +10,7 @@ _INTERRUPT_MARKER = "[Request interrupted by user]"
 
 def _is_interrupt_marker(text: str) -> bool:
     """Return True if *text* is the synthetic interrupt placeholder."""
-    return text.strip() == _INTERRUPT_MARKER
+    return text == _INTERRUPT_MARKER
 
 
 class EventType(Enum):

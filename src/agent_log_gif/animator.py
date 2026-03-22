@@ -470,6 +470,17 @@ def generate_frames(
     turn_start_event: ReplayEvent | None = None
     pending_tool_text: str | None = None
 
+    def _maybe_mark_done(end_event: ReplayEvent | None) -> None:
+        """Mark the footer as done if it's still thinking."""
+        if footer.state != "thinking":
+            return
+        duration = (
+            _compute_turn_duration(turn_start_event, end_event)
+            if turn_start_event and end_event
+            else None
+        )
+        footer.mark_done(duration)
+
     for idx, event in enumerate(events):
         next_event = events[idx + 1] if idx + 1 < len(events) else None
 
@@ -486,14 +497,8 @@ def generate_frames(
             # If footer is still thinking from a previous turn that ended
             # without an ASSISTANT_MESSAGE (e.g. ended with TOOL_RESULT),
             # mark it done before the next user starts typing.
-            if footer.state == "thinking" and turn_start_event is not None:
-                prev_event = events[idx - 1] if idx > 0 else None
-                duration = (
-                    _compute_turn_duration(turn_start_event, prev_event)
-                    if prev_event
-                    else None
-                )
-                footer.mark_done(duration)
+            if turn_start_event is not None:
+                _maybe_mark_done(events[idx - 1] if idx > 0 else None)
 
             turn_start_event = event
 
@@ -550,12 +555,7 @@ def generate_frames(
                 EventType.USER_MESSAGE,
                 EventType.INTERRUPTED,
             ):
-                duration = (
-                    _compute_turn_duration(turn_start_event, event)
-                    if turn_start_event
-                    else None
-                )
-                footer.mark_done(duration)
+                _maybe_mark_done(event)
                 buffer.append([])
 
             # Brief pause after assistant
@@ -611,14 +611,7 @@ def generate_frames(
                 _append_tool_call_block(buffer, pending_tool_text, theme)
                 pending_tool_text = None
             buffer.append([(event.text, theme.comment)])
-            # Mark the turn as done since it was interrupted
-            if footer.state == "thinking":
-                duration = (
-                    _compute_turn_duration(turn_start_event, event)
-                    if turn_start_event
-                    else None
-                )
-                footer.mark_done(duration)
+            _maybe_mark_done(event)
             _snap(buffer, pause_ms)
 
     # Commit any remaining pending tool call
@@ -626,13 +619,7 @@ def generate_frames(
         _append_tool_call_block(buffer, pending_tool_text, theme)
 
     # If footer is still thinking, mark done
-    if footer.state == "thinking":
-        duration = (
-            _compute_turn_duration(turn_start_event, events[-1])
-            if turn_start_event and events
-            else None
-        )
-        footer.mark_done(duration)
+    _maybe_mark_done(events[-1] if events else None)
 
     # Hold final frame a bit longer
     if frames:

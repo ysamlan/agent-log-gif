@@ -150,18 +150,22 @@ def _parse_jsonl_file(filepath):
     return {"loglines": loglines, "transcript_source": "claude"}
 
 
+_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(/\S+)\s*</command-name>")
+_COMMAND_ARGS_RE = re.compile(r"<command-args>\s*(.*?)\s*</command-args>", re.DOTALL)
+
+
 def _extract_slash_command(text):
     """Convert Claude Code ``<command-name>`` XML into a clean slash command.
 
     Returns the cleaned string (e.g. ``/simplify everything``) when the text
     matches the XML pattern, or *None* if it doesn't match.
     """
-    m = re.search(r"<command-name>\s*(/\S+)\s*</command-name>", text)
+    m = _COMMAND_NAME_RE.search(text)
     if not m:
         return None
     name = m.group(1)
 
-    args_m = re.search(r"<command-args>\s*(.*?)\s*</command-args>", text, re.DOTALL)
+    args_m = _COMMAND_ARGS_RE.search(text)
     args = args_m.group(1).strip() if args_m else ""
 
     return f"{name} {args}".strip() if args else name

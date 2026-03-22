@@ -131,37 +131,36 @@ def save_gif(
 
         # Reusable transparent fill image
         trans_l = Image.new("L", (width, height), transparent_idx)
-        # Precomputed LUT for exact diff: 0->0, nonzero->255
-        exact_lut = [0] + [255] * 255
 
         if lossy > 0:
             # Tolerance LUT: differences <= lossy are treated as unchanged
             tolerance_lut = [0] * min(lossy + 1, 256) + [255] * max(256 - lossy - 1, 0)
+            prev_channels = prev_rgb.split()
+        else:
+            # Precomputed LUT for exact diff: 0->0, nonzero->255
+            exact_lut = [0] + [255] * 255
 
         for img, _ in frame_iter:
             curr_q = img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
             curr_data = curr_q.tobytes()
+            curr_l = Image.frombytes("L", (width, height), curr_data)
 
             if lossy > 0:
                 # Lossy: compare in RGB space with per-channel tolerance.
                 # A pixel is "changed" only if ANY channel differs by > lossy.
-                # All ops are C-level Pillow.
-                r1, g1, b1 = prev_rgb.split()
+                r1, g1, b1 = prev_channels
                 r2, g2, b2 = img.split()
                 dr = ImageChops.difference(r1, r2).point(tolerance_lut)
                 dg = ImageChops.difference(g1, g2).point(tolerance_lut)
                 db = ImageChops.difference(b1, b2).point(tolerance_lut)
-                # Union: changed if any channel exceeds threshold
                 mask = ImageChops.lighter(ImageChops.lighter(dr, dg), db)
+                prev_channels = r2, g2, b2
             else:
                 # Exact: compare palette indices (faster, no RGB split needed)
                 prev_l = Image.frombytes("L", (width, height), prev_data)
-                curr_l = Image.frombytes("L", (width, height), curr_data)
                 diff_l = ImageChops.difference(prev_l, curr_l)
                 mask = diff_l.point(exact_lut)
 
-            # composite: changed pixels from curr, unchanged from transparent
-            curr_l = Image.frombytes("L", (width, height), curr_data)
             result_l = Image.composite(curr_l, trans_l, mask)
 
             # Wrap as P-mode with the global palette
