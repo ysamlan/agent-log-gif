@@ -1,6 +1,5 @@
 """Tests for the audio mixing backend."""
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -32,7 +31,6 @@ def _make_test_audio(path: Path, duration_secs: float = 5.0):
     )
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 class TestMixAudio:
     def test_mixes_audio_into_video(self, tmp_path):
         """Audio is mixed into the video file."""

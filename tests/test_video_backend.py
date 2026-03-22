@@ -1,6 +1,5 @@
 """Tests for the video output backends (MP4, AVIF)."""
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -117,7 +116,6 @@ class TestAvifEncoderSelection:
         assert _preferred_av1_encoders() == ["libsvtav1", "libaom-av1"]
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 class TestSaveMp4:
     def test_creates_mp4_file(self, tmp_path):
         frames = [make_frame("red"), make_frame("blue"), make_frame("green")]
@@ -139,7 +137,6 @@ class TestSaveMp4:
         assert output.exists()
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 class TestSaveMp4FrameStore:
     def test_accepts_frame_store(self, tmp_path):
         store = FrameStore()
@@ -152,7 +149,6 @@ class TestSaveMp4FrameStore:
         assert output.stat().st_size > 0
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 class TestSaveAvif:
     def test_creates_avif_file(self, tmp_path):
         frames = [make_frame("red"), make_frame("blue"), make_frame("green")]
