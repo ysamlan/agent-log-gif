@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
 OUTPUT = ROOT / "3rd_party_licenses.txt"
 
+# Packages that are CLI tool wrappers, not linked dependencies —
+# exclude from license audit.
+EXCLUDE_PACKAGES = {"gifsicle-bin"}
+
 
 def parse_production_deps(pyproject_path: Path) -> list[str]:
     """Extract production dependency names from pyproject.toml."""
@@ -57,7 +61,9 @@ def parse_production_deps(pyproject_path: Path) -> list[str]:
 
 
 def main():
-    packages = parse_production_deps(PYPROJECT)
+    packages = [
+        p for p in parse_production_deps(PYPROJECT) if p not in EXCLUDE_PACKAGES
+    ]
     if not packages:
         print("No packages found in pyproject.toml", file=sys.stderr)
         sys.exit(1)
