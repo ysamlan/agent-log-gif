@@ -46,7 +46,7 @@ def test_main_readme_demo_uses_white_canvas_background():
 
 def test_readme_embeds_avif_demo():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "![demo](demo.avif)" in readme
+    assert "![demo](docs/demo.avif)" in readme
 
 
 def test_demo_session_uses_reserved_example_email():

@@ -6,7 +6,7 @@
 
 Turn your Claude Code and Codex sessions into animated terminal-style replay GIFs or videos. Share them on Reddit, Slack, etc.
 
-![demo](demo.avif)<br><sup>_With apologies to [Summer Yue](https://www.theverge.com/ai-artificial-intelligence/883034/openclaw-ai-deleting-emails-stop-openclaw)._</sup>
+![demo](docs/demo.avif)<br><sup>_With apologies to [Summer Yue](https://www.theverge.com/ai-artificial-intelligence/883034/openclaw-ai-deleting-emails-stop-openclaw)._</sup>
 
 Less fun but more usefully: use agent session videos to do retrospective reviews; include cool Claude demos in slide decks.
 

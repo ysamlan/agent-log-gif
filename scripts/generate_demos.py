@@ -6,7 +6,7 @@ Usage:
     uv run scripts/generate_demos.py   # directly
 
 Outputs:
-    demo.avif                   — Main above-the-fold demo (inbox zero scenario)
+    docs/demo.avif              — Main above-the-fold demo (inbox zero scenario)
     docs/demo-windows-codex.avif — Windows chrome, Codex session
 """
 
@@ -23,7 +23,7 @@ DOCS = ROOT / "docs"
 DEMOS = [
     {
         "description": "Main demo — inbox zero scenario (mac chrome, --show tools)",
-        "output": ROOT / "demo.avif",
+        "output": DOCS / "demo.avif",
         "args": [
             str(SCRIPTS / "demo_session.jsonl"),
             "--format",
