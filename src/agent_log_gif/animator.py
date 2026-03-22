@@ -656,14 +656,13 @@ def _animate_user_typing(
     """
     prefix = f"{PROMPT_CHAR} "
     prefix_len = len(prefix)
-    max_first_line = theme.cols - prefix_len
-    max_cont_line = theme.cols - 2  # continuation indent
 
     # Wrap once, elide if needed — reuse for both typing animation and buffer commit
     wrapped_lines = _wrap_text(text, theme.cols, prefix_len)
     wrapped_lines = _elide_wrapped_lines(wrapped_lines, USER_MESSAGE_MAX_LINES)
 
-    # Flatten wrapped lines into a single string for progressive typing
+    # Flatten wrapped lines into a single string for progressive typing.
+    # The \n delimiters mark word-boundary wrap points from _wrap_text.
     flat_text = "\n".join(wrapped_lines)
 
     # Progressive typing — input area grows as text wraps
@@ -672,26 +671,22 @@ def _animate_user_typing(
         chars_typed = min(chars_typed + chars_per_frame, len(flat_text))
         visible = flat_text[:chars_typed]
 
-        # Wrap the visible text into input area lines (all highlighted)
+        # Split on the \n delimiters so line breaks during typing match
+        # the final word-wrapped result and no \n ends up in draw.text().
         input_lines: list[StyledLine] = []
-        remaining = visible
-        first = True
-        while remaining:
-            if first:
-                chunk = remaining[:max_first_line]
-                remaining = remaining[max_first_line:]
+        for i, line_text in enumerate(visible.split("\n")):
+            if i == 0:
                 input_lines.append(
                     [
                         (prefix, theme.prompt_color),
-                        (chunk, theme.foreground),
+                        (line_text, theme.foreground),
                         HIGHLIGHT_MARKER,
                     ]
                 )
-                first = False
             else:
-                chunk = remaining[:max_cont_line]
-                remaining = remaining[max_cont_line:]
-                input_lines.append([("  " + chunk, theme.foreground), HIGHLIGHT_MARKER])
+                input_lines.append(
+                    [("  " + line_text, theme.foreground), HIGHLIGHT_MARKER]
+                )
 
         # Composer: [status, gap, input_lines...] — input replaces the prompt.
         # Transient placeholder is the gap between transcript and pinned area.

@@ -626,6 +626,53 @@ class TestGenerateFrames:
         short_frames = generate_frames(short_events, theme=theme)
         assert len(frames) > len(short_frames)
 
+    def test_multiline_typing_no_newlines_in_rendered_text(self):
+        """Multiline user typing must not pass \\n to the renderer.
+
+        Regression: _animate_user_typing joined wrapped lines with \\n then
+        re-split at fixed column widths, leaking \\n into text segments.
+        Pillow renders \\n as a line break inside draw.text(), causing
+        partial text to drop into the row below.
+        """
+        from unittest.mock import patch
+
+        from agent_log_gif.theme import TerminalTheme
+
+        theme = TerminalTheme(cols=40)
+        long_input = (
+            "i'd like to modify this one to be able to a) generate pdfs "
+            "and b) generate doc / docx versions"
+        )
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text=long_input),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="OK"),
+        ]
+
+        # Intercept render_frame calls to inspect the styled lines
+        rendered_lines = []
+
+        from agent_log_gif.renderer import TerminalRenderer
+
+        original_render = TerminalRenderer.render_frame
+
+        def capturing_render(self_renderer, lines, cursor_pos=None):
+            rendered_lines.append(lines)
+            return original_render(self_renderer, lines, cursor_pos)
+
+        with patch.object(TerminalRenderer, "render_frame", capturing_render):
+            generate_frames(events, theme=theme, parallel=1)
+
+        # No styled line segment should contain a \n character
+        for frame_lines in rendered_lines:
+            for line in frame_lines:
+                for seg in line:
+                    text, color = seg
+                    if color == "HIGHLIGHT":
+                        continue
+                    assert "\n" not in text, (
+                        f"Newline found in rendered text segment: {text!r}"
+                    )
+
     def test_long_user_input_produces_more_typing_frames(self):
         """Longer user text produces proportionally more typing frames."""
         short_text = "Hello"
