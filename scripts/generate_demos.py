@@ -49,6 +49,8 @@ DEMOS = [
             "avif",
             "--chrome",
             "windows",
+            "--color-scheme",
+            "Rose Pine Dawn",
         ],
     },
 ]

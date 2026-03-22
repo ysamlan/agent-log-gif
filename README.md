@@ -13,7 +13,7 @@ Less fun but more usefully: use agent session videos to do retrospective reviews
 Supports Claude Code and Codex sessions out of the box.
 
 <details>
-<summary>Windows chrome + Codex session</summary>
+<summary>Windows UI + Codex example</summary>
 
 ![windows-codex](docs/demo-windows-codex.avif)
 
