@@ -177,6 +177,54 @@ class TestLoglinesToTimeline:
         events = loglines_to_timeline(loglines)
         assert len(events) == 0
 
+    def test_interrupt_marker_becomes_interrupted_event(self):
+        """[Request interrupted by user] text becomes an INTERRUPTED event."""
+        loglines = [
+            {
+                "type": "assistant",
+                "timestamp": "T1",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "partial response"}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "T2",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "[Request interrupted by user]"}
+                    ],
+                },
+            },
+        ]
+        events = loglines_to_timeline(loglines)
+
+        assert len(events) == 2
+        assert events[0].type == EventType.ASSISTANT_MESSAGE
+        assert events[1].type == EventType.INTERRUPTED
+        assert "\u21b3 Interrupted" in events[1].text
+
+    def test_interrupt_marker_not_a_user_message(self):
+        """The interrupt marker must not appear as a USER_MESSAGE event."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "T",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "[Request interrupted by user]"}
+                    ],
+                },
+            },
+        ]
+        events = loglines_to_timeline(loglines)
+
+        assert len(events) == 1
+        assert events[0].type == EventType.INTERRUPTED
+
 
 class TestVisibleEvents:
     """Test filtering to visible events."""
@@ -214,6 +262,17 @@ class TestVisibleEvents:
         assert EventType.TOOL_CALL in types
         assert EventType.TOOL_RESULT in types
         assert EventType.THINKING not in types
+
+    def test_interrupted_always_visible(self):
+        """INTERRUPTED events pass the default visibility filter."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="partial"),
+            ReplayEvent(type=EventType.INTERRUPTED, text="\u21b3 Interrupted"),
+        ]
+        filtered = visible_events(events)
+        assert len(filtered) == 3
+        assert filtered[2].type == EventType.INTERRUPTED
 
     def test_show_all_includes_everything(self):
         events = [

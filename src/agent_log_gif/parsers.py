@@ -5,6 +5,7 @@ normalizing them into a standard loglines format.
 """
 
 import json
+import re
 from pathlib import Path
 
 
@@ -115,11 +116,27 @@ def _parse_jsonl_file(filepath):
                 if entry_type not in ("user", "assistant"):
                     continue
 
+                # Skip internal meta-messages (local-command-caveat, skill
+                # base-directory instructions, etc.) — never shown in the UI.
+                if obj.get("isMeta"):
+                    continue
+
+                # Rewrite <command-name> XML → clean slash command
+                message = obj.get("message", {})
+                msg_content = message.get("content", "")
+                if entry_type == "user" and isinstance(msg_content, str):
+                    cmd = _extract_slash_command(msg_content)
+                    if cmd is not None:
+                        message = {
+                            "role": "user",
+                            "content": cmd,
+                        }
+
                 # Convert to standard format
                 entry = {
                     "type": entry_type,
                     "timestamp": obj.get("timestamp", ""),
-                    "message": obj.get("message", {}),
+                    "message": message,
                 }
 
                 # Preserve isCompactSummary if present
@@ -131,6 +148,23 @@ def _parse_jsonl_file(filepath):
                 continue
 
     return {"loglines": loglines, "transcript_source": "claude"}
+
+
+def _extract_slash_command(text):
+    """Convert Claude Code ``<command-name>`` XML into a clean slash command.
+
+    Returns the cleaned string (e.g. ``/simplify everything``) when the text
+    matches the XML pattern, or *None* if it doesn't match.
+    """
+    m = re.search(r"<command-name>\s*(/\S+)\s*</command-name>", text)
+    if not m:
+        return None
+    name = m.group(1)
+
+    args_m = re.search(r"<command-args>\s*(.*?)\s*</command-args>", text, re.DOTALL)
+    args = args_m.group(1).strip() if args_m else ""
+
+    return f"{name} {args}".strip() if args else name
 
 
 def _is_codex_setup_text(text):

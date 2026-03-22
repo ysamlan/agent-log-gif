@@ -546,7 +546,10 @@ def generate_frames(
                 prompt_line=prompt_line,
             )
 
-            if next_event is None or next_event.type == EventType.USER_MESSAGE:
+            if next_event is None or next_event.type in (
+                EventType.USER_MESSAGE,
+                EventType.INTERRUPTED,
+            ):
                 duration = (
                     _compute_turn_duration(turn_start_event, event)
                     if turn_start_event
@@ -600,6 +603,22 @@ def generate_frames(
                 max_lines=THINKING_MAX_LINES,
                 trailing_blank=True,
             )
+            _snap(buffer, pause_ms)
+
+        elif event.type == EventType.INTERRUPTED:
+            # Muted grey "↳ Interrupted" line — matches Claude Code's UI
+            if pending_tool_text is not None:
+                _append_tool_call_block(buffer, pending_tool_text, theme)
+                pending_tool_text = None
+            buffer.append([(event.text, theme.comment)])
+            # Mark the turn as done since it was interrupted
+            if footer.state == "thinking":
+                duration = (
+                    _compute_turn_duration(turn_start_event, event)
+                    if turn_start_event
+                    else None
+                )
+                footer.mark_done(duration)
             _snap(buffer, pause_ms)
 
     # Commit any remaining pending tool call

@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+_INTERRUPT_MARKER = "[Request interrupted by user]"
+
+
+def _is_interrupt_marker(text: str) -> bool:
+    """Return True if *text* is the synthetic interrupt placeholder."""
+    return text.strip() == _INTERRUPT_MARKER
+
 
 class EventType(Enum):
     USER_MESSAGE = "user_message"
@@ -12,10 +19,15 @@ class EventType(Enum):
     THINKING = "thinking"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    INTERRUPTED = "interrupted"
 
 
 # Events visible by default in GIF output
-VISIBLE_EVENT_TYPES = {EventType.USER_MESSAGE, EventType.ASSISTANT_MESSAGE}
+VISIBLE_EVENT_TYPES = {
+    EventType.USER_MESSAGE,
+    EventType.ASSISTANT_MESSAGE,
+    EventType.INTERRUPTED,
+}
 
 # Named show presets: map user-facing names to event type sets
 SHOW_EXTRAS = {
@@ -80,7 +92,17 @@ def loglines_to_timeline(loglines: list[dict]) -> list[ReplayEvent]:
                             )
                     elif block_type == "text":
                         text = block.get("text", "").strip()
-                        if text:
+                        if not text:
+                            continue
+                        if _is_interrupt_marker(text):
+                            events.append(
+                                ReplayEvent(
+                                    type=EventType.INTERRUPTED,
+                                    text="\u21b3 Interrupted",
+                                    timestamp=timestamp,
+                                )
+                            )
+                        else:
                             events.append(
                                 ReplayEvent(
                                     type=EventType.USER_MESSAGE,

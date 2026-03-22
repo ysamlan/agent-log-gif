@@ -568,6 +568,20 @@ class TestGenerateFrames:
         # Frame 22 should be the first typing frame for "Yo"
         assert frames[22][1] == 80
 
+    def test_interrupted_event_produces_frames(self):
+        """INTERRUPTED events render without crashing and produce frames."""
+        events = [
+            ReplayEvent(type=EventType.USER_MESSAGE, text="Hi"),
+            ReplayEvent(type=EventType.ASSISTANT_MESSAGE, text="partial response"),
+            ReplayEvent(type=EventType.INTERRUPTED, text="\u21b3 Interrupted"),
+            ReplayEvent(type=EventType.USER_MESSAGE, text="try again"),
+        ]
+        frames = generate_frames(events)
+        assert len(frames) > 0
+        for img, ms in frames:
+            assert img.size[0] > 0
+            assert ms > 0
+
     def test_final_frame_held_longer(self):
         """The last frame has a longer duration for viewing."""
         events = [

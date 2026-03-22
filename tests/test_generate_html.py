@@ -240,6 +240,38 @@ class TestParseSessionFile:
             if isinstance(content, str):
                 assert "<turn_aborted>" not in content
 
+    def test_jsonl_skips_is_meta_entries(self, tmp_path):
+        """Entries with isMeta=true (local-command-caveat, etc.) are filtered."""
+        session_file = tmp_path / "meta.jsonl"
+        session_file.write_text(
+            '{"type":"user","timestamp":"T1","message":{"role":"user","content":"real prompt"}}\n'
+            '{"type":"user","timestamp":"T2","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>ignore</local-command-caveat>"}}\n'
+            '{"type":"assistant","timestamp":"T3","message":{"role":"assistant","content":[{"type":"text","text":"response"}]}}\n',
+            encoding="utf-8",
+        )
+        result = parse_session_file(session_file)
+
+        assert len(result["loglines"]) == 2
+        assert result["loglines"][0]["message"]["content"] == "real prompt"
+        assert result["loglines"][1]["type"] == "assistant"
+
+    def test_jsonl_transforms_command_name_xml(self, tmp_path):
+        """<command-name> XML in user messages becomes clean slash command text."""
+        session_file = tmp_path / "cmd.jsonl"
+        session_file.write_text(
+            '{"type":"user","timestamp":"T1","message":{"role":"user","content":"<command-name>/reload-plugins</command-name>\\n<command-message>reload-plugins</command-message>\\n<command-args></command-args>"}}\n'
+            '{"type":"user","timestamp":"T2","message":{"role":"user","content":"<command-message>simplify</command-message>\\n<command-name>/simplify</command-name>\\n<command-args>everything we\\u0027ve done</command-args>"}}\n',
+            encoding="utf-8",
+        )
+        result = parse_session_file(session_file)
+
+        assert len(result["loglines"]) == 2
+        assert result["loglines"][0]["message"]["content"] == "/reload-plugins"
+        assert (
+            result["loglines"][1]["message"]["content"]
+            == "/simplify everything we've done"
+        )
+
 
 class TestGetSessionSummary:
     """Tests for get_session_summary which extracts summary from session files."""
