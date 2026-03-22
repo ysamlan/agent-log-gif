@@ -46,6 +46,7 @@ Use this output to understand available flags — the tool evolves, so always ch
 ```bash
 uvx agent-log-gif --help
 ```
+gets help on all available options; note that the `local` option is for an interactive mode you won't be able to navigate inside a skill.
 
 ## Finding sessions
 
