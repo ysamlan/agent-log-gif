@@ -223,6 +223,17 @@ class TestLocalCommand:
 
         return _select
 
+    @staticmethod
+    def _setup_fake_home(tmp_path, monkeypatch, codex=True, claude=False):
+        """Create a fake home with optional .codex/.claude dirs, patching Path.home()."""
+        fake_home = tmp_path / "home"
+        if codex:
+            (fake_home / ".codex" / "sessions").mkdir(parents=True)
+        if claude:
+            (fake_home / ".claude" / "projects").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        return fake_home
+
     def test_local_walks_through_interactive_prompts(self, tmp_path, monkeypatch):
         """local command uses questionary prompts and produces output."""
         # Create a fake session file the picker will "select"
@@ -233,10 +244,7 @@ class TestLocalCommand:
         monkeypatch.setattr(
             agent_log_gif, "find_local_sessions", lambda *a, **kw: [(fixture, "hi")]
         )
-        fake_home = tmp_path / "home"
-        codex_dir = fake_home / ".codex" / "sessions"
-        codex_dir.mkdir(parents=True)
-        monkeypatch.setenv("HOME", str(fake_home))
+        self._setup_fake_home(tmp_path, monkeypatch)
 
         # With -o, format prompt is skipped. Remaining prompts:
         # session picker → fixture, chrome → mac, show → "" (conversation only)
@@ -262,10 +270,7 @@ class TestLocalCommand:
         monkeypatch.setattr(
             agent_log_gif, "find_local_sessions", lambda *a, **kw: [(fixture, "hi")]
         )
-        fake_home = tmp_path / "home"
-        codex_dir = fake_home / ".codex" / "sessions"
-        codex_dir.mkdir(parents=True)
-        monkeypatch.setenv("HOME", str(fake_home))
+        self._setup_fake_home(tmp_path, monkeypatch)
 
         # Return None (user cancelled) at the session picker
         monkeypatch.setattr(
@@ -282,10 +287,7 @@ class TestLocalCommand:
 
     def test_local_no_sessions_found(self, tmp_path, monkeypatch):
         """Shows message when no sessions exist."""
-        fake_home = tmp_path / "home"
-        codex_dir = fake_home / ".codex" / "sessions"
-        codex_dir.mkdir(parents=True)
-        monkeypatch.setenv("HOME", str(fake_home))
+        self._setup_fake_home(tmp_path, monkeypatch)
 
         monkeypatch.setattr(agent_log_gif, "find_local_sessions", lambda *a, **kw: [])
 
@@ -295,11 +297,13 @@ class TestLocalCommand:
         assert result.exit_code == 0
         assert "No" in result.output and "sessions found" in result.output
 
-    def test_local_default_values_dont_crash(self, tmp_path, monkeypatch):
+    def test_local_default_values_dont_crash(self):
         """Questionary default= values match Choice values (regression test)."""
         import questionary as q
+        from questionary.prompts.common import InquirerControl
 
-        # Verify all three selects accept their default without raising
+        # Validate defaults via InquirerControl directly — avoids creating
+        # a terminal prompt (which fails in CI without a console/pty).
         for choices, default in [
             (
                 [
@@ -330,4 +334,4 @@ class TestLocalCommand:
             ),
         ]:
             # This raises ValueError if default doesn't match a choice value
-            q.select("test", choices=choices, default=default)
+            InquirerControl(choices, initial_choice=default)
