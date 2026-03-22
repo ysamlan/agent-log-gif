@@ -61,7 +61,7 @@ src/agent_log_gif/
 
 ## Dependencies
 
-Python dependencies are in `pyproject.toml`. Optional system tools: ffmpeg (MP4/AVIF/audio), gifsicle (GIF optimization).
+Python dependencies are in `pyproject.toml`. GIF optimization via gifsicle is included automatically via the [gifsicle-bin](https://github.com/ysamlan/gifsicle-bin) dependency. Optional system tool: ffmpeg (MP4/AVIF/audio).
 
 ### Bundled assets
 

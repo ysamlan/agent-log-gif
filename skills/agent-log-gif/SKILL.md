@@ -160,7 +160,6 @@ Note: tool results use `type: "user"` — this is the API protocol, not human in
 ## Important notes
 
 - Always use `uvx agent-log-gif` — it handles installation automatically
-- The tool warns if gifsicle is missing (GIFs still work, just larger) — relay the install tip
 - MP4/AVIF require ffmpeg — help the user install it if needed
 - Session file URLs also work: `uvx agent-log-gif json https://...`
 - Codex sessions are auto-detected by the tool's parser — no special flags needed

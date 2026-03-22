@@ -558,8 +558,8 @@ def _check_optional_tools(fmt: str) -> None:
 
     if fmt == "gif" and not shutil.which("gifsicle"):
         click.echo(
-            "Tip: install gifsicle for 80-85% smaller GIFs. "
-            "See https://www.lcdf.org/gifsicle/",
+            "Warning: gifsicle not found — GIFs will be larger. "
+            "Try: pip install gifsicle-bin",
             err=True,
         )
 

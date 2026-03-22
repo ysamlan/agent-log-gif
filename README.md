@@ -48,17 +48,29 @@ Or to install as a Skill you can ask your agent to use for you:
 npx skills add ysamlan/agent-log-gif
 ```
 
+## Claude/Codex skill
+
+agent-log-gif includes an [agent-log-gif Skill](https://github.com/ysamlan/agent-log-gif/tree/main/skills/agent-log-gif/) that lets Claude Code / Codex find your sessions and generate animations for you conversationally. Copy the skills/agent-log-gif  folder it into `~/.claude/skills/`, or install automatically via [skills.sh](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills add ysamlan/agent-log-gif
+```
+
+Then ask Claude things like "make a gif of my last coding session" or "find the session where I worked on auth and make an mp4 showing tool calls," or run `/agent-log-gif` inside Claude Code (`$agent-log-gif` in Codex).
+
 ## Optional tools
 
-GIF output works out of the box. For better compression and video output, install these using your system package manager of choice:
-
-Install [gifsicle](https://www.lcdf.org/gifsicle/) for 80% better compression of GIFs, and [ffmpeg](https://ffmpeg.org/) for MP4/AVIF output. Using your package manager of choice (`brew install gifsicle ffmpeg`, `choco install gifsicle ffmpeg`,  `apt install gifsicle ffmpeg` etc.)
+For MP4/AVIF output, install [ffmpeg](https://ffmpeg.org/) using your system package manager (`brew install ffmpeg`, `choco install ffmpeg`, `apt install ffmpeg`, etc.).
 
 For AVIF, your `ffmpeg` build must include an AV1 encoder. `agent-log-gif` prefers `libsvtav1` and falls back to `libaom-av1`.
 
 ```bash
 ffmpeg -encoders | rg 'av1|svt|aom'
 ```
+
+## Optimized GIFs
+
+GIF optimization is done automatically via [gifsicle](https://www.lcdf.org/gifsicle/) using [gifsicle-bin](https://github.com/ysamlan/gifsicle-bin). Very large GIFs will skip automatic optimization to avoid hanging/crashing `gifsicle`.
 
 ## Usage
 
@@ -184,16 +196,6 @@ agent-log-gif json [OPTIONS] [FILE]
 
 agent-log-gif search KEYWORD [--source claude|codex]
 ```
-
-## Claude Code skill
-
-agent-log-gif includes an [agent-log-gif Skill](https://github.com/ysamlan/agent-log-gif/tree/main/skills/agent-log-gif/) that lets Claude Code / Codex find your sessions and generate animations for you conversationally. Copy the skills/agent-log-gif  folder it into `~/.claude/skills/`, or install automatically via [skills.sh](https://github.com/vercel-labs/skills):
-
-```bash
-npx skills add ysamlan/agent-log-gif
-```
-
-Then ask Claude things like "make a gif of my last coding session" or "find the session where I worked on auth and make an mp4 showing tool calls."
 
 ## Credits
 
