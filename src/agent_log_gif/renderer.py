@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -84,7 +85,12 @@ class TerminalRenderer:
         self._highlight_bottom_pad_ss = round(ss * 1)
 
         # Compute final output dimensions (1x)
-        content_width = self.theme.cols * self.char_width + 2 * self.theme.padding
+        # Use ceil on the total text width (not per-char) so the canvas
+        # fits all cols at the font's fractional glyph advance without
+        # adding excess per-column padding.
+        content_width = (
+            math.ceil(self.theme.cols * font_1x.getlength("M")) + 2 * self.theme.padding
+        )
         content_height = (
             self.theme.rows * self.char_height
             + self.theme.padding

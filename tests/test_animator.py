@@ -602,6 +602,28 @@ class TestGenerateFrames:
         frames = generate_frames(events)
         assert len(frames) > 0
 
+    def test_no_word_boundary_wrap_uses_full_width(self):
+        """A string with no spaces wraps at exactly `cols` characters.
+
+        Regression: with a 2-char prompt prefix, a continuous "aaa..." string
+        must fill cols-prefix_len characters on the first line, not fewer.
+        """
+        from agent_log_gif.animator import _wrap_text
+
+        cols = 80
+        prefix_len = 2  # "❯ "
+        text = "a" * 200
+
+        lines = _wrap_text(text, cols, prefix_len)
+
+        assert len(lines[0]) == cols - prefix_len, (
+            f"First line should use {cols - prefix_len} chars, got {len(lines[0])}"
+        )
+        # Continuation lines have a 2-char indent
+        assert len(lines[1]) == cols - 2, (
+            f"Continuation line should use {cols - 2} chars, got {len(lines[1])}"
+        )
+
     def test_long_user_input_wraps_during_typing(self):
         """User input that exceeds terminal width wraps onto multiple lines while typing."""
         from agent_log_gif.theme import TerminalTheme

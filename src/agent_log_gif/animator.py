@@ -232,9 +232,6 @@ def _wrap_text(text: str, width: int, prefix_len: int = 0) -> list[str]:
     if not text:
         return [""]
 
-    # Reserve 1 column so text doesn't butt against the right padding edge
-    width = width - 1
-
     # First line has less space due to prefix
     first_width = max(width - prefix_len, 20)
     subsequent_width = max(width - 2, 20)  # 2 chars indent for continuation

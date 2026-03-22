@@ -113,6 +113,42 @@ class TestTerminalRenderer:
         assert frame.size[0] < 300
         assert frame.size[1] < 200
 
+    def test_full_width_text_not_clipped(self):
+        """Text filling all `cols` columns must not be clipped at the right edge.
+
+        Regression: int() truncation of fractional char width made the canvas
+        narrower than the font's actual glyph advances, clipping the last
+        character on full-width lines.
+        """
+        from agent_log_gif.chrome import ChromeStyle, get_titlebar_height
+
+        theme = TerminalTheme(cols=40, rows=5)
+        renderer = TerminalRenderer(theme)
+        bg = theme.hex_to_rgb(theme.background)
+        titlebar_h = get_titlebar_height(ChromeStyle.MAC)
+
+        # Render a full-width line and find the rightmost foreground pixel
+        # in the content area (below the titlebar).
+        full_line = "M" * 40
+        frame = renderer.render_frame([[(full_line, theme.foreground)]])
+
+        rightmost_text_x = 0
+        for x in range(frame.width - 1, -1, -1):
+            for y in range(titlebar_h, frame.height):
+                if frame.getpixel((x, y)) != bg:
+                    rightmost_text_x = x
+                    break
+            if rightmost_text_x:
+                break
+
+        # Right margin (canvas edge minus rightmost text pixel) should be
+        # roughly comparable to the left padding — not wildly larger.
+        right_margin = frame.width - rightmost_text_x
+        assert right_margin <= theme.padding * 2, (
+            f"Right margin {right_margin}px is too wide vs left padding "
+            f"{theme.padding}px — text isn't filling the available width"
+        )
+
     def test_ssaa_factor_does_not_change_output_dimensions(self):
         """Different SSAA factors produce identical output sizes."""
         theme = TerminalTheme(cols=80, rows=30)

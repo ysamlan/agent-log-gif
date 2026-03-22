@@ -128,7 +128,7 @@ class TerminalTheme:
     rows: int = 18
 
     # Pixel padding around terminal content
-    padding: int = 28
+    padding: int = 16
     padding_bottom: int = 36  # extra space at bottom for the prompt line
 
     @classmethod

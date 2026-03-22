@@ -21,7 +21,7 @@ class TestTerminalTheme:
         assert theme.cols == 80
         assert theme.rows == 18
         assert theme.font_size == 16
-        assert theme.padding == 28
+        assert theme.padding == 16
 
     def test_hex_to_rgb(self):
         theme = TerminalTheme()
