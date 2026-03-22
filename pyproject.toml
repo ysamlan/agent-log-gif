@@ -1,6 +1,6 @@
 [project]
 name = "agent-log-gif"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Convert Claude Code session files to animated gifs and videos. Fork of https://github.com/simonw/claude-code-transcripts."
 readme = "README.md"
 license = "Apache-2.0"
@@ -28,8 +28,11 @@ CI = "https://github.com/ysamlan/agent-log-gif/actions"
 agent-log-gif = "agent_log_gif:main"
 
 [build-system]
-requires = ["uv_build>=0.9.7,<0.11"]
-build-backend = "uv_build"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
 
 [dependency-groups]
 dev = [
