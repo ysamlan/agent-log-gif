@@ -21,10 +21,10 @@ jobs:
         run: uv python install 3.13
       - name: Install dependencies
         run: uv sync --frozen
-      - name: Install Just
-        uses: extractions/setup-just@v3
       - name: Lint
-        run: just lint-check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
