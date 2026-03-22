@@ -9,6 +9,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "click-default-group" },
+    { name = "gifsicle-bin" },
     { name = "httpx" },
     { name = "pillow" },
     { name = "pyzstd" },
@@ -26,6 +27,7 @@ dev = [
 requires-dist = [
     { name = "click" },
     { name = "click-default-group" },
+    { name = "gifsicle-bin", specifier = ">=1.96.1" },
     { name = "httpx" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pyzstd", specifier = ">=0.19.1" },
@@ -210,6 +212,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598", size = 16740, upload-time = "2025-11-21T23:01:53.443Z" },
+]
+
+[[package]]
+name = "gifsicle-bin"
+version = "1.96.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/b0/8db1db8071f0716b51469ecce202f17dbe64b44ded3201393b00db7071d1/gifsicle_bin-1.96.1.tar.gz", hash = "sha256:2f903a479c730a4c80fd0c556239cd394a257d041f57c6ebd5b3dfbcf3049e3c", size = 486944, upload-time = "2026-03-22T01:25:38.886Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/42/9055f3cbe337c3f8369ced3a55f6753a7a19b9d1affc8a668747d2dde3e6/gifsicle_bin-1.96.1-py3-none-macosx_10_9_universal2.whl", hash = "sha256:5f70d9a2a0db3c6882380cfeacc1f551256218d94da33e715a734eaf868f2fbf", size = 229795, upload-time = "2026-03-22T01:25:28.834Z" },
+    { url = "https://files.pythonhosted.org/packages/02/50/402acd9c8faebcfd8be467da7db23227b56aaf7d523a9c4d3457461abc31/gifsicle_bin-1.96.1-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3ff83048e11b13ef8667fc57426b06ef4343f6cc68af813f0be86ae2125c491b", size = 132754, upload-time = "2026-03-22T01:25:30.364Z" },
+    { url = "https://files.pythonhosted.org/packages/59/1c/e09ded4f3ae9fce2fb2921a79a308cac294a4af4717ec41d314e754010fa/gifsicle_bin-1.96.1-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:76a2a0cc6b77e0a113acac2e58c899350572a92c82fffbdbb5d889cbfb982743", size = 135832, upload-time = "2026-03-22T01:25:31.846Z" },
+    { url = "https://files.pythonhosted.org/packages/77/b4/c52b7d708cf84678c73d9082ba4c5f4c5920ce421cc84651823715f5351d/gifsicle_bin-1.96.1-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:b8e2aad1586c520415421ce5b8cdf6d6b9cbae99a22aeb81d4bc207e52d5a408", size = 137177, upload-time = "2026-03-22T01:25:33.043Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/bf/005f9c52a730e8af00218201af6973568647b59f15fa22e329eac22ae8fb/gifsicle_bin-1.96.1-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:272fcbfefbeaa60aadaef3896e6fe95ef2464738cdd1e5add067e7dbc5e7768f", size = 139313, upload-time = "2026-03-22T01:25:34.496Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/d5/f770d1288081e754f35ac0158577fc01ff9d0a4475d42da78e21e1e7cf8b/gifsicle_bin-1.96.1-py3-none-win_amd64.whl", hash = "sha256:491f49266b37076924754ba9460757e66612a39b3200bcf6cc524aff620cc7bf", size = 116570, upload-time = "2026-03-22T01:25:36.066Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/84/21879609a3f0fbe7761658b9366ef39085b385d2caa23821b7387352fe3f/gifsicle_bin-1.96.1-py3-none-win_arm64.whl", hash = "sha256:eedb4209024a2a0bd34090df939701c4aca7dad3d1f85f2ae76d75f7deb5b1f4", size = 103605, upload-time = "2026-03-22T01:25:37.268Z" },
 ]
 
 [[package]]
