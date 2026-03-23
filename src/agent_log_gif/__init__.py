@@ -698,7 +698,7 @@ def _media_options(fn):
                 "--rows",
                 type=int,
                 default=None,
-                help="Terminal height in rows (default: 30).",
+                help="Terminal height in rows (default: 18).",
             ),
             click.option(
                 "--font-size",

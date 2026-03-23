@@ -22,11 +22,13 @@ test-v *args:
 lint:
     ruff check --fix .
     ruff format .
+    djhtml --tabwidth=2 web/
 
 # Check linting without fixing (for CI)
 lint-check:
     ruff check .
     ruff format --check .
+    djhtml --tabwidth=2 --check web/
 
 # === Profiling ===
 
@@ -51,3 +53,21 @@ sync-schemes:
 # Generate Python dependency license audit
 licenses:
     python scripts/generate_licenses.py
+
+# Run web UI e2e tests (fast UI tests only, skip slow Pyodide pipeline tests)
+test-web:
+    pytest tests/test_web_ui.py -m "not slow" "$@"
+
+# Run web UI e2e tests including slow full-pipeline tests
+test-web-full:
+    pytest tests/test_web_ui.py "$@"
+
+# === Web ===
+
+# Build the web bundle (agent_log_gif.zip for Pyodide)
+build-web:
+    bash scripts/build_web.sh
+
+# Serve the web UI locally (rebuild bundle first)
+serve: build-web
+    cd web && python3 -m http.server 8000

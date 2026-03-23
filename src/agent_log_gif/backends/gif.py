@@ -12,7 +12,6 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
-import click
 from PIL import Image, ImageChops
 
 from agent_log_gif.frame_store import FrameStore
@@ -204,6 +203,8 @@ def _optimize_with_gifsicle(
     lossy: int = 0,
 ) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
+    import click
+
     if not shutil.which("gifsicle"):
         return
 
@@ -219,7 +220,11 @@ def _optimize_with_gifsicle(
     optimized_path = gif_path.with_suffix(".opt.gif")
 
     try:
-        cmd = ["gifsicle", "-O2"]
+        # -O2 gets ~3pp better compression than -O1 but costs ~1.6x the time.
+        # At large sizes (>50 MB / ~17k frames) O2 adds 20+ seconds for
+        # marginal gain, so fall back to O1.
+        opt_level = "-O1" if original_mb > 50 else "-O2"
+        cmd = ["gifsicle", opt_level]
         # If the caller already did lossy diffing, use a gentler gifsicle
         # lossy setting (or none). If no lossy was done, let gifsicle do it.
         if lossy == 0:

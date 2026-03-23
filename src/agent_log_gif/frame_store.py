@@ -14,18 +14,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-import pyzstd
 from PIL import Image
 
-# Level 1: fastest zstd, comparable speed to LZ4 but better ratios
-_ZSTD_LEVEL = 1
+try:
+    import pyzstd
+
+    def _zcompress(data: bytes) -> bytes:
+        return pyzstd.compress(data, 1)
+
+    _zdecompress = pyzstd.decompress
+except ImportError:
+    import zlib
+
+    _zcompress = zlib.compress
+    _zdecompress = zlib.decompress
 
 
 class FrameStore:
     """Memory-efficient store for animation frames.
 
-    Stores frames as zstd-compressed raw RGB bytes with metadata.
-    Reconstructs PIL Images on demand during iteration or random access.
+    Stores frames as compressed raw RGB bytes (pyzstd when available, zlib
+    fallback for Pyodide). Reconstructs PIL Images on demand during iteration.
     """
 
     def __init__(self) -> None:
@@ -34,14 +43,14 @@ class FrameStore:
 
     @staticmethod
     def _compress(img: Image.Image) -> tuple[bytes, int, int]:
-        """Compress a PIL Image to zstd bytes, return (data, width, height)."""
+        """Compress a PIL Image, return (data, width, height)."""
         w, h = img.size
-        return pyzstd.compress(img.tobytes(), _ZSTD_LEVEL), w, h
+        return _zcompress(img.tobytes()), w, h
 
     @staticmethod
     def _decompress(data: bytes, w: int, h: int) -> Image.Image:
         """Reconstruct a PIL Image from compressed bytes."""
-        return Image.frombytes("RGB", (w, h), pyzstd.decompress(data))
+        return Image.frombytes("RGB", (w, h), _zdecompress(data))
 
     def append(self, img: Image.Image, duration_ms: int) -> None:
         """Add a frame. The PIL Image is compressed immediately."""
@@ -78,7 +87,7 @@ class FrameStore:
     def raw_iter(self) -> Iterator[tuple[bytes, int]]:
         """Yield (raw_rgb_bytes, duration_ms) without PIL reconstruction."""
         for data, dur, _, _ in self._frames:
-            yield pyzstd.decompress(data), dur
+            yield _zdecompress(data), dur
 
     def durations(self) -> list[int]:
         """Return list of all frame durations without decompressing images."""

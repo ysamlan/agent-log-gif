@@ -3,7 +3,6 @@
 import subprocess
 
 import pytest
-from conftest import make_frame, make_striped_frame
 from PIL import Image
 
 from agent_log_gif.backends.gif import _build_palette, _optimize_with_gifsicle, save_gif
@@ -11,6 +10,7 @@ from agent_log_gif.backends.gif import _build_palette, _optimize_with_gifsicle, 
 # save_gif now uses frame diffing by default and takes a gifsicle= parameter.
 # Tests below disable gifsicle post-processing for speed/isolation.
 from agent_log_gif.frame_store import FrameStore
+from conftest import make_frame, make_striped_frame
 
 
 class TestSaveGif:

@@ -4,10 +4,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import make_frame
 
 from agent_log_gif.backends.audio import mix_audio
 from agent_log_gif.backends.video import save_mp4
+from conftest import make_frame
 
 
 def _make_test_audio(path: Path, duration_secs: float = 5.0):
