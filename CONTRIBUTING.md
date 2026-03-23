@@ -65,11 +65,9 @@ web/                 # Static web UI (GitHub Pages)
 ├── worker.js        # Web Worker (Pyodide + Pillow + gifsicle.wasm)
 ├── pipeline.py      # Python pipeline for Pyodide
 ├── agent_log_gif.zip  # Built by scripts/build_web.sh (not checked in)
-└── lib/gifsicle/    # gifsicle compiled to WASM
+└── lib/gifsicle/    # gifsicle compiled to WASM (from gifsicle-bin releases)
     ├── gifsicle.js    # Emscripten JS loader
-    ├── gifsicle.wasm  # Compiled binary (~233 KB)
-    ├── build.sh       # Reproducible build script
-    └── gifsicle-wasm.patch  # 12-line entry point patch
+    └── gifsicle.wasm  # Compiled binary (~233 KB)
 ```
 
 ## Dependencies
@@ -107,7 +105,7 @@ This creates `web/agent_log_gif.zip` from `src/`. The zip is not checked into gi
 
 ### Deployment
 
-GitHub Pages deploys automatically on push to `main` via `.github/workflows/pages.yml`. The workflow runs `build_web.sh` then deploys the `web/` directory.
+GitHub Pages deploys automatically on push to `main` via `.github/workflows/pages.yml`. The workflow fetches the gifsicle WASM artifacts from the gifsicle-bin release, runs `build_web.sh`, then deploys the `web/` directory.
 
 To enable: go to repo **Settings → Pages → Source** and select **"GitHub Actions"**.
 
@@ -115,45 +113,28 @@ PyPI publishing runs from `.github/workflows/publish.yml` when a GitHub release 
 
 ## Updating gifsicle WASM
 
-The gifsicle WASM build in `web/lib/gifsicle/` is adapted from [simonw/tools](https://github.com/simonw/tools/tree/main/lib/gifsicle) ([blog post](https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/)). The compiled `gifsicle.js` + `gifsicle.wasm` are checked into the repo (~310 KB total) so CI doesn't need Emscripten.
+The gifsicle WASM artifacts (`gifsicle.js` + `gifsicle.wasm`) are built by [gifsicle-bin](https://github.com/ysamlan/gifsicle-bin) CI and published as GitHub Release assets. The WASM build approach is based on [Simon Willison's gifsicle WASM work](https://github.com/simonw/tools) ([blog post](https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/)).
 
-To rebuild (e.g., to pick up a new gifsicle version):
+The compiled artifacts are checked into `web/lib/gifsicle/` (~310 KB total) so local dev works without extra setup.
 
-1. **Install Emscripten** ([emsdk](https://emscripten.org/docs/getting_started/downloads.html)):
-   ```bash
-   git clone https://github.com/emscripten-core/emsdk.git
-   cd emsdk && ./emsdk install latest && ./emsdk activate latest
-   source emsdk_env.sh
+To update (e.g., after a new gifsicle-bin release):
+
+1. **Bump the version** in `pyproject.toml`:
+   ```
+   "gifsicle-bin>=1.96.2",  # ← update to the new version
    ```
 
-2. **Edit the pinned commit** in `web/lib/gifsicle/build.sh`:
+2. **Fetch the new WASM artifacts**:
    ```bash
-   GIFSICLE_COMMIT="07f5c4c"  # ← update this to the new gifsicle commit
+   just update-gifsicle-wasm
    ```
+   This downloads `gifsicle.js` and `gifsicle.wasm` from the matching [gifsicle-bin GitHub release](https://github.com/ysamlan/gifsicle-bin/releases).
 
-3. **Run the build**:
-   ```bash
-   cd web/lib/gifsicle && bash build.sh
-   ```
-   This clones gifsicle at the pinned commit, applies `gifsicle-wasm.patch` (adds a 12-line `entry.c` that wraps `main()` as a reusable `run_gifsicle()` function), and compiles with `emcc -O2`.
+3. **Test** — run `just serve`, drop a file, verify the GIF output and gifsicle savings percentage look reasonable.
 
-4. **Test** — run `just serve`, drop a file, verify the GIF output and gifsicle savings percentage look reasonable.
+4. **Commit** the updated `gifsicle.js` and `gifsicle.wasm`.
 
-5. **Commit** the updated `gifsicle.js` and `gifsicle.wasm`.
-
-If the patch fails to apply on a newer gifsicle version, you may need to update `gifsicle-wasm.patch`. The patch is minimal — it just adds `entry.c`:
-```c
-#include <emscripten.h>
-#include <unistd.h>
-
-int __main_argc_argv(int argc, char *argv[]);
-
-EMSCRIPTEN_KEEPALIVE
-int run_gifsicle(int argc, char *argv[]) {
-    optind = 1;
-    return __main_argc_argv(argc, argv);
-}
-```
+The Pages deployment workflow also fetches fresh WASM artifacts during CI (`scripts/fetch_gifsicle_wasm.sh`), so the deployed site always matches the version pinned in `pyproject.toml`.
 
 ### Bundled assets
 

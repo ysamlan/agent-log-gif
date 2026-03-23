@@ -64,6 +64,10 @@ test-web-full:
 
 # === Web ===
 
+# Update gifsicle WASM from gifsicle-bin GitHub release (version from pyproject.toml)
+update-gifsicle-wasm *args:
+    bash scripts/fetch_gifsicle_wasm.sh "$@"
+
 # Build the web bundle (agent_log_gif.zip for Pyodide)
 build-web:
     bash scripts/build_web.sh

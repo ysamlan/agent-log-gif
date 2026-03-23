@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   sudo \
   build-essential \
   pkg-config \
+  autoconf \
+  automake \
+  libtool \
   ffmpeg \
   fzf \
   zsh \
@@ -79,6 +82,11 @@ COPY --from=oven/bun:latest /usr/local/bin/bunx /usr/local/bin/bunx
 # Set up non-root user
 USER node
 ENV ZSH_IN_DOCKER_VERSION=1.2.1
+
+# Install Emscripten SDK (for gifsicle-bin WASM builds)
+RUN git clone --depth 1 https://github.com/emscripten-core/emsdk.git /home/node/.emsdk && \
+  cd /home/node/.emsdk && ./emsdk install latest && ./emsdk activate latest
+ENV PATH="/home/node/.emsdk:/home/node/.emsdk/upstream/emscripten:$PATH"
 
 # Install mise (manages Python + Node.js versions)
 RUN curl https://mise.run | sh

@@ -1,9 +1,10 @@
 /**
- * Dedicated Web Worker for gifsicle GIF optimization (GPL v2).
+ * Dedicated Web Worker for gifsicle GIF optimization.
  *
  * Runs in a separate execution context from the main pipeline (Apache 2.0)
- * to maintain clear GPL boundary separation — communication is solely via
- * postMessage, analogous to subprocess.run() in the CLI.
+ * to maintain clear boundary separation — communication is solely via
+ * "arms length" CLI arguments / outputs passed via postMessage, analogous 
+ * to agent-log-gif's CLI usage of gifsicle via Python's subprocess.run().
  *
  * Message protocol:
  *   In:  {type: "optimize", gif: ArrayBuffer, args: string[]}
@@ -11,7 +12,8 @@
  *        {type: "error", message: string}
  *
  * gifsicle by Eddie Kohler, released under the GNU GPL v2.
- * WASM build from simonw/tools (https://github.com/simonw/tools/tree/main/lib/gifsicle).
+ * WASM build from gifsicle-bin (https://github.com/ysamlan/gifsicle-bin),
+ * approach based on simonw/tools (https://github.com/simonw/tools/tree/main/lib/gifsicle).
  */
 
 let wasmBinaryCache = null;
@@ -43,11 +45,11 @@ async function optimize(gifBuffer, args) {
   const argv = mod._malloc((fullArgs.length + 1) * 4);
   const ptrs = [];
   for (let i = 0; i < fullArgs.length; i++) {
-    const p = mod.allocateUTF8(fullArgs[i]);
+    const p = mod.stringToNewUTF8(fullArgs[i]);
     ptrs.push(p);
-    mod.HEAP32[(argv >> 2) + i] = p;
+    mod.setValue(argv + i * 4, p, "i32");
   }
-  mod.HEAP32[(argv >> 2) + fullArgs.length] = 0;
+  mod.setValue(argv + fullArgs.length * 4, 0, "i32");
 
   let returnCode;
   try {
