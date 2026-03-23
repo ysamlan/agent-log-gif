@@ -67,11 +67,11 @@ class TestAvifCodecArgs:
             "-threads",
             "14",
             "-crf",
-            "36",
+            "30",
             "-b:v",
             "0",
             "-pix_fmt",
-            "yuv420p",
+            "yuv420p10le",
         ]
 
     def test_aom_uses_faster_cpu_used_on_lower_core_machines(self):
@@ -86,18 +86,20 @@ class TestAvifCodecArgs:
         threads_index = args.index("-threads")
         assert args[threads_index + 1] == "1"
 
-    def test_svt_uses_tuned_preset(self):
+    def test_svt_uses_screen_content_tuned_preset(self):
         args = _avif_codec_args("libsvtav1", cpu_count=14)
 
         assert args == [
             "-c:v",
             "libsvtav1",
             "-preset",
-            "10",
+            "6",
             "-crf",
-            "36",
+            "30",
             "-pix_fmt",
-            "yuv420p",
+            "yuv420p10le",
+            "-svtav1-params",
+            "tune=0:scm=1:film-grain=0:enable-overlays=1",
         ]
 
 

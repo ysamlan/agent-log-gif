@@ -52,22 +52,24 @@ def _select_av1_encoder(encoders: set[str] | None = None) -> str | None:
 
 
 def _avif_codec_args(encoder: str, cpu_count: int | None = None) -> list[str]:
-    """Return AVIF codec args tuned for interactive encode times.
+    """Return AVIF codec args tuned for screen-content quality.
 
-    ``cpu-used`` is a speed/quality knob, not a thread count. We choose a
-    faster preset on smaller machines and allow slightly more quality on
-    larger ones, while threading still follows the available CPU count.
+    Uses 10-bit color to reduce banding on dark backgrounds, screen-content
+    mode (``scm=1``) for palette + intra-block-copy tools, and perceptual
+    tuning (``tune=0``) to prioritise text sharpness over PSNR.
     """
     if encoder == "libsvtav1":
         return [
             "-c:v",
             "libsvtav1",
             "-preset",
-            "10",
+            "6",
             "-crf",
-            "36",
+            "30",
             "-pix_fmt",
-            "yuv420p",
+            "yuv420p10le",
+            "-svtav1-params",
+            "tune=0:scm=1:film-grain=0:enable-overlays=1",
         ]
     if cpu_count is None:
         threads = max(1, os.cpu_count() or 1)
@@ -90,11 +92,11 @@ def _avif_codec_args(encoder: str, cpu_count: int | None = None) -> list[str]:
         "-threads",
         str(threads),
         "-crf",
-        "36",
+        "30",
         "-b:v",
         "0",
         "-pix_fmt",
-        "yuv420p",
+        "yuv420p10le",
     ]
 
 
