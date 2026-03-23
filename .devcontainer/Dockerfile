@@ -3,6 +3,7 @@ FROM debian:bookworm
 ARG TZ
 ENV TZ="$TZ"
 ENV GIT_DELTA_VERSION=0.18.2
+ENV LIBWEBP_VERSION=1.5.0
 ARG CLAUDE_CODE_VERSION=latest
 
 # Install development tools
@@ -68,6 +69,15 @@ RUN ARCH=$(dpkg --print-architecture) && \
   wget "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   sudo dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
+
+# Install libwebp tools (cwebp, img2webp, gif2webp, webpmux)
+# Not available in apt for bookworm; download pre-built binaries from Google.
+RUN ARCH=$(dpkg --print-architecture) && \
+  if [ "$ARCH" = "amd64" ]; then WEBP_ARCH="x86-64"; else WEBP_ARCH="aarch64"; fi && \
+  wget -q "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${LIBWEBP_VERSION}-linux-${WEBP_ARCH}.tar.gz" && \
+  tar xzf "libwebp-${LIBWEBP_VERSION}-linux-${WEBP_ARCH}.tar.gz" && \
+  cp libwebp-${LIBWEBP_VERSION}-linux-${WEBP_ARCH}/bin/{cwebp,dwebp,img2webp,gif2webp,webpmux,webpinfo} /usr/local/bin/ && \
+  rm -rf "libwebp-${LIBWEBP_VERSION}-linux-${WEBP_ARCH}" "libwebp-${LIBWEBP_VERSION}-linux-${WEBP_ARCH}.tar.gz"
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
