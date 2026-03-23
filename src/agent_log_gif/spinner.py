@@ -132,7 +132,7 @@ CODEX_SHIMMER = ShimmerProfile(
     band_half_width=5.0,
     padding=10,
     max_intensity=0.9,
-    direction=1,
+    direction=-1,
 )
 
 CLAUDE_SHIMMER = ShimmerProfile(
@@ -142,7 +142,7 @@ CLAUDE_SHIMMER = ShimmerProfile(
     band_half_width=3.5,
     padding=8,
     max_intensity=0.7,
-    direction=-1,
+    direction=1,
 )
 
 
@@ -207,12 +207,8 @@ def shimmer_styled_segments(
             blend_hex(base, profile.highlight_color, intensity * profile.max_intensity)
         )
 
-    # Coalesce adjacent same-color characters into segments
-    segments: list[tuple[str, str]] = []
-    run_start = 0
-    for i in range(1, len(colors)):
-        if colors[i] != colors[run_start]:
-            segments.append((text[run_start:i], colors[run_start]))
-            run_start = i
-    segments.append((text[run_start:], colors[run_start]))
-    return segments
+    # Return per-character segments so every character is drawn at its
+    # deterministic grid position.  Coalescing into multi-char segments
+    # causes sub-pixel drift because Pillow uses fractional glyph advances
+    # internally while our grid snaps to int(char_width).
+    return [(text[i], colors[i]) for i in range(len(text))]
