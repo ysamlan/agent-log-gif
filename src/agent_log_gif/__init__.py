@@ -361,6 +361,10 @@ def _session_to_media(
         from agent_log_gif.backends.video import save_avif
 
         save_avif(frames, output_path)
+    elif fmt == "webp":
+        from agent_log_gif.backends.webp import save_webp
+
+        save_webp(frames, output_path)
     else:
         raise click.ClickException(f"Unknown format: {fmt}")
 
@@ -641,7 +645,7 @@ def _media_options(fn):
             click.option(
                 "--format",
                 "fmt",
-                type=click.Choice(["gif", "mp4", "avif"], case_sensitive=False),
+                type=click.Choice(["gif", "mp4", "avif", "webp"], case_sensitive=False),
                 default="gif",
                 help="Output format (default: gif). mp4/avif require ffmpeg.",
             ),
@@ -878,6 +882,7 @@ def local_cmd(
                 questionary.Choice("GIF (default)", value="gif"),
                 questionary.Choice("MP4 (requires ffmpeg)", value="mp4"),
                 questionary.Choice("AVIF (requires ffmpeg)", value="avif"),
+                questionary.Choice("WebP", value="webp"),
             ],
             default="gif",
         ).ask()
