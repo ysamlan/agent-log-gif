@@ -41,11 +41,14 @@
     "source=uv-cache-${localEnv:UV_CACHE_ARCH:linux-arm64},target=/home/node/.cache/uv,type=volume"
   ],
   "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "AGENT_BROWSER_EXECUTABLE_PATH": "/home/node/.local/bin/playwright-chromium"
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  // configure Playwright test chromium; point agent-browser to use the same version of it to avoid duplication
-  "postStartCommand": "mise trust && uv sync && uv run playwright install chromium && export AGENT_BROWSER_EXECUTABLE_PATH=$(find ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome -maxdepth 0 2>/dev/null | head -1) && git config core.hooksPath .githooks",
+  // configure Playwright test chromium; point agent-browser to a stable symlink
+  // so later shells and tools can reuse the same installed browser without
+  // depending on an ephemeral export from this command.
+  "postStartCommand": "mise trust && uv sync && uv run playwright install chromium && mkdir -p ~/.local/bin && CHROME=$(find ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome -maxdepth 0 2>/dev/null | head -1) && test -n \"$CHROME\" && ln -sf \"$CHROME\" ~/.local/bin/playwright-chromium && git config core.hooksPath .githooks",
   "waitFor": "postStartCommand"
 }

@@ -9,8 +9,8 @@
          H20 A15,15 0 0,1 5,65
          V25 A15,15 0 0,1 20,10 Z"
       fill="#0F172A"
-      stroke="#334155"
-      stroke-width="3"
+      stroke="#E2E8F0"
+      stroke-width="4"
       stroke-linejoin="round"
     />
     <path

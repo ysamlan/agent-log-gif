@@ -203,10 +203,10 @@ agent-log-gif search KEYWORD [--source claude|codex]
 
 ## Credits
 
-Session parsing logic originally based on [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts).
-[Gifsicle](https://www.lcdf.org/gifsicle/) by Eddie Kohler (GPLv2 license) is used for (optional) gif optimization. 
-[gifsicle-bin](https://github.com/ysamlan/gifsicle-bin) provides auto-installation of arms-length gifsicle binaries for optimization. 
-Gifsicle WASM build (for the web-based demo) from <a href="https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/">Simon Willison</a>.
+Session parsing logic originally based on [Simon Willison](https://simonwillison.net/)'s [claude-code-transcripts](https://github.com/simonw/claude-code-transcripts).<br>
+[Gifsicle](https://www.lcdf.org/gifsicle/) by Eddie Kohler (GPLv2 license) is used for (optional) gif optimization.<br>
+[gifsicle-bin](https://github.com/ysamlan/gifsicle-bin) provides auto-installation of arms-length gifsicle binaries for optimization.<br>
+Gifsicle WASM build (for the web-based demo) from <a href="https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/">Simon Willison</a>.<br>
 Color schemes from [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) by Mark Badolato (MIT license).
 
 ## Development
