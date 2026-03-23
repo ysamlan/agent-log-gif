@@ -111,6 +111,8 @@ GitHub Pages deploys automatically on push to `main` via `.github/workflows/page
 
 To enable: go to repo **Settings → Pages → Source** and select **"GitHub Actions"**.
 
+PyPI publishing runs from `.github/workflows/publish.yml` when a GitHub release is published. That workflow mirrors CI: non-browser tests run across the Python matrix, while Playwright browser tests run once on Ubuntu/Python 3.13 before publish.
+
 ## Updating gifsicle WASM
 
 The gifsicle WASM build in `web/lib/gifsicle/` is adapted from [simonw/tools](https://github.com/simonw/tools/tree/main/lib/gifsicle) ([blog post](https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/)). The compiled `gifsicle.js` + `gifsicle.wasm` are checked into the repo (~310 KB total) so CI doesn't need Emscripten.

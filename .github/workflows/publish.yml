@@ -28,10 +28,30 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest --ignore=tests/test_web_ui.py
+
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.13
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Install Playwright browser
+        run: uv run playwright install chromium
+      - name: Run browser tests
+        run: uv run pytest tests/test_web_ui.py
+
   deploy:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, test-web]
     environment: pypi
     permissions:
       id-token: write
