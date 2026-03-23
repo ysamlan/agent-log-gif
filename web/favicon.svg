@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>agent-log-gif favicon</title>
+  <g transform="matrix(0.68 0 0 0.68 -1.5 -3)">
+    <path
+      d="M20,10
+         H80 A15,15 0 0,1 95,25
+         V65 A15,15 0 0,1 80,80
+         H45 L20,96 L30,80
+         H20 A15,15 0 0,1 5,65
+         V25 A15,15 0 0,1 20,10 Z"
+      fill="#0F172A"
+      stroke="#334155"
+      stroke-width="3"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M30,28 L48,45 L30,62"
+      fill="none"
+      stroke="#A855F7"
+      stroke-width="12"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <rect x="56" y="56" width="16" height="12" rx="2" fill="#22D3EE" />
+  </g>
+</svg>
