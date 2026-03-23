@@ -84,8 +84,19 @@ class TestSaveWebp:
             assert img.is_animated
             assert img.n_frames == 2
 
-    def test_quality_parameter(self, tmp_path):
-        """Lower quality produces smaller files with complex content."""
+    def test_default_is_lossless(self, tmp_path):
+        """Default lossless mode produces bit-perfect roundtrip."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.webp"
+        save_webp(frames, output)
+
+        with Image.open(output) as img:
+            img.seek(0)
+            pixel = img.convert("RGB").getpixel((50, 50))
+            assert pixel == (255, 0, 0)
+
+    def test_lossy_quality_parameter(self, tmp_path):
+        """Lower lossy quality produces smaller files with complex content."""
         import random
 
         random.seed(42)
@@ -104,7 +115,17 @@ class TestSaveWebp:
 
         high_q = tmp_path / "high.webp"
         low_q = tmp_path / "low.webp"
-        save_webp(complex_frames, high_q, quality=95)
-        save_webp(complex_frames, low_q, quality=10)
+        save_webp(complex_frames, high_q, lossless=False, quality=95)
+        save_webp(complex_frames, low_q, lossless=False, quality=10)
 
         assert low_q.stat().st_size < high_q.stat().st_size
+
+    def test_lossless_smaller_than_lossy_for_terminal_content(self, tmp_path):
+        """Lossless beats lossy for flat-color terminal-like frames."""
+        frames = [make_frame("red"), make_frame("blue"), make_frame("green")]
+        lossless_out = tmp_path / "lossless.webp"
+        lossy_out = tmp_path / "lossy.webp"
+        save_webp(frames, lossless_out, lossless=True)
+        save_webp(frames, lossy_out, lossless=False, quality=80)
+
+        assert lossless_out.stat().st_size <= lossy_out.stat().st_size

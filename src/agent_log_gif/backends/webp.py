@@ -2,6 +2,10 @@
 
 Assembles animated WebP from a sequence of (Image, duration_ms) frames.
 Uses Pillow's native WebP support — no external tools required.
+
+Defaults to lossless encoding because terminal content (flat-color regions
+with sharp text edges) compresses smaller with lossless prediction than
+with lossy transforms.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from agent_log_gif.frame_store import FrameStore
 def save_webp(
     frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
+    lossless: bool = True,
     quality: int = 80,
     method: int = 4,
 ) -> Path:
@@ -25,10 +30,12 @@ def save_webp(
     Args:
         frames: FrameStore or iterable of (PIL.Image, duration_ms) tuples.
         output_path: Path to write the .webp file.
-        quality: WebP quality (1-100, default 80). Higher = better quality,
-                 larger file.
+        lossless: Use lossless encoding (default True). Lossless is both
+                  bit-perfect and smaller than lossy for terminal content.
+        quality: Lossy quality (1-100, default 80) when lossless=False.
+                 Ignored in lossless mode.
         method: Encoding method (0-6, default 4). Higher = slower but
-                smaller file.
+                smaller file. Applies to both lossy and lossless modes.
 
     Returns:
         Path to the written WebP file.
@@ -54,15 +61,18 @@ def save_webp(
     first_img, _ = next(frame_iter)
     rest = [img for img, _ in frame_iter]
 
-    first_img.save(
-        str(output_path),
-        format="WEBP",
-        save_all=True,
-        append_images=rest,
-        duration=durations,
-        loop=0,
-        quality=quality,
-        method=method,
-    )
+    save_kwargs: dict = {
+        "format": "WEBP",
+        "save_all": True,
+        "append_images": rest,
+        "duration": durations,
+        "loop": 0,
+        "lossless": lossless,
+        "method": method,
+    }
+    if not lossless:
+        save_kwargs["quality"] = quality
+
+    first_img.save(str(output_path), **save_kwargs)
 
     return output_path
