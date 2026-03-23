@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   pkg-config \
   ffmpeg \
-  gifsicle \
   fzf \
   zsh \
   man-db \
@@ -27,6 +26,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   wget \
   ca-certificates \
+  libnspr4 \
+  libnss3 \
+  libatk1.0-0 \
+  libatk-bridge2.0-0 \
+  libcups2 \
+  libatspi2.0-0 \
+  libxcomposite1 \
+  libxdamage1 \
   locales-all \
   ripgrep \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -65,6 +72,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install bun
+COPY --from=oven/bun:latest /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:latest /usr/local/bin/bunx /usr/local/bin/bunx
+
 # Set up non-root user
 USER node
 ENV ZSH_IN_DOCKER_VERSION=1.2.1
@@ -76,6 +87,7 @@ RUN curl https://mise.run | sh
 ENV PATH="/home/node/.local/bin:/home/node/.local/share/mise/shims:$PATH"
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH="$PATH:/usr/local/share/npm-global/bin"
+ENV PATH="$PATH:/home/node/.bun/bin"
 
 # Install Python 3.13 and Node.js 24 via mise
 RUN mise use --global python@3.13 node@24
@@ -112,8 +124,14 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION
 
-# Install codex and just via npm
-RUN npm i -g @openai/codex rust-just
+# Install codex and just via bun
+RUN bun i -g @openai/codex rust-just
+
+# Install agent-browser skill reqs (see devcontainer.json for playwright+agent-browser chromium install)
+RUN bun i -g agent-browser
+
+# Install skills from skills-lock.json
+RUN bunx skills experimental_install
 
 # uv sync runs in devcontainer.json postStartCommand because
 # the workspace is bind-mounted at container runtime (not available during docker build).

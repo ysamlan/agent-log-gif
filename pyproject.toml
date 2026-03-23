@@ -36,9 +36,11 @@ source = "vcs"
 
 [dependency-groups]
 dev = [
+    "djhtml>=3.0.7",
     "pip-licenses>=5.0.0",
     "pytest>=9.0.2",
     "pytest-httpx>=0.35.0",
+    "pytest-playwright>=0.7.0",
     "ruff>=0.14.0",
 ]
 
@@ -49,5 +51,9 @@ target-version = "py310"
 select = ["E", "F", "I"]
 ignore = ["E501"]  # Line length handled by formatter
 
+[tool.ruff.lint.isort]
+known-first-party = ["agent_log_gif", "conftest"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: full pipeline e2e tests (load Pyodide + render + gifsicle)"]

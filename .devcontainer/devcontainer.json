@@ -36,6 +36,7 @@
     "source=alg-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
     "source=alg-claude-config-${devcontainerId},target=/home/node/.claude,type=volume",
     "source=alg-codex-config-${devcontainerId},target=/home/node/.codex,type=volume",
+    "source=alg-node-modules-${devcontainerId},target=/workspace/node_modules,type=volume",
     "source=alg-venv-${devcontainerId},target=/workspace/.venv_devcontainer,type=volume",
     "source=uv-cache-${localEnv:UV_CACHE_ARCH:linux-arm64},target=/home/node/.cache/uv,type=volume"
   ],
@@ -44,6 +45,7 @@
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  "postStartCommand": "mise trust && uv sync && git config core.hooksPath .githooks",
+  // configure Playwright test chromium; point agent-browser to use the same version of it to avoid duplication
+  "postStartCommand": "mise trust && uv sync && uv run playwright install chromium && export AGENT_BROWSER_EXECUTABLE_PATH=$(find ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome -maxdepth 0 2>/dev/null | head -1) && git config core.hooksPath .githooks",
   "waitFor": "postStartCommand"
 }

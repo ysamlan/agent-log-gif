@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import make_frame
 from PIL import Image
 
 from agent_log_gif.backends.video import (
@@ -15,6 +14,7 @@ from agent_log_gif.backends.video import (
     save_mp4,
 )
 from agent_log_gif.frame_store import FrameStore
+from conftest import make_frame
 
 
 class TestEncodeVideoInvocation:

@@ -15,3 +15,8 @@ skills/agent-log-gif-workspace
 .claude/settings.local.json
 target/
 gifsicle-bin/
+web/agent_log_gif.zip
+.devcontainer/Dockerfile
+
+# managed by skills.sh (eg bunx skills experimental_install to sync)
+.claude/skills/agent-browser
