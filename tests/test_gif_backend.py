@@ -248,6 +248,34 @@ class TestFrameDiffing:
             # Frame 0 disposal
             assert gif.disposal_method in (0, 1)  # asis / do not dispose
 
+    def test_loop_true_produces_infinite_loop(self, tmp_path):
+        """loop=True (default) writes NETSCAPE extension with loop=0."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False, loop=True)
+
+        with Image.open(output) as gif:
+            assert gif.info.get("loop") == 0
+
+    def test_loop_false_produces_no_loop(self, tmp_path):
+        """loop=False omits NETSCAPE extension so the GIF plays once."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False, loop=False)
+
+        with Image.open(output) as gif:
+            # No NETSCAPE extension → no "loop" key in info
+            assert "loop" not in gif.info
+
+    def test_default_loop_is_true(self, tmp_path):
+        """Default behavior (no loop= arg) loops infinitely."""
+        frames = [make_frame("red"), make_frame("blue")]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False)
+
+        with Image.open(output) as gif:
+            assert gif.info.get("loop") == 0
+
 
 class TestGifsicleInvocation:
     def test_gifsicle_uses_o2(self, monkeypatch, tmp_path):

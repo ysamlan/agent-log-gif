@@ -54,6 +54,7 @@ def save_gif(
     palette_seeds: list[tuple[int, int, int]] | None = None,
     gifsicle: bool = True,
     lossy: int | None = None,
+    loop: bool = True,
 ) -> Path:
     """Save frames as an animated GIF with frame differencing.
 
@@ -76,6 +77,8 @@ def save_gif(
                this per-channel value are treated as unchanged, producing
                smaller files at the cost of visual fidelity. 0 = lossless.
                Default None means let gifsicle handle lossy (--lossy=80).
+        loop: Whether the GIF loops infinitely (default True). When False,
+              the GIF plays once and stops.
 
     Returns:
         Path to the written GIF file.
@@ -175,15 +178,18 @@ def save_gif(
     # the GCE block for consistency)
     first_q.info["transparency"] = transparent_idx
 
-    first_q.save(
-        str(output_path),
-        save_all=True,
-        append_images=_make_diff_frames(),
-        duration=durations,
-        loop=0,
-        disposal=1,  # do not dispose — previous frame stays visible
-        transparency=transparent_idx,
-    )
+    save_kwargs = {
+        "save_all": True,
+        "append_images": _make_diff_frames(),
+        "duration": durations,
+        "disposal": 1,  # do not dispose — previous frame stays visible
+        "transparency": transparent_idx,
+    }
+    if loop:
+        save_kwargs["loop"] = 0  # infinite loop
+    # When loop=False, omit "loop" so Pillow skips the NETSCAPE extension
+    # and the GIF plays once.
+    first_q.save(str(output_path), **save_kwargs)
 
     if gifsicle:
         _optimize_with_gifsicle(
@@ -191,6 +197,7 @@ def save_gif(
             size_limit_mb=size_limit_mb,
             colors=colors,
             lossy=lossy,
+            loop=loop,
         )
 
     return output_path
@@ -201,6 +208,7 @@ def _optimize_with_gifsicle(
     size_limit_mb: int = 200,
     colors: int = 256,
     lossy: int = 0,
+    loop: bool = True,
 ) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
     import click
@@ -233,6 +241,8 @@ def _optimize_with_gifsicle(
             # Small tolerance already applied — light gifsicle lossy on top
             cmd.append("--lossy=40")
         # else: lossy >= 30, skip gifsicle lossy (we did enough)
+        if not loop:
+            cmd.append("--no-loopcount")
         if colors < 256:
             cmd += [f"--colors={colors}"]
         cmd += [str(gif_path), "-o", str(optimized_path)]

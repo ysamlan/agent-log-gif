@@ -409,6 +409,13 @@
             <label for="opt-scheme">Color scheme (<a href="https://iterm2colorschemes.com/" target="_blank" rel="noopener">see available</a>)</label>
             <input type="text" id="opt-scheme" placeholder="Dracula">
           </div>
+          <div class="field">
+            <label for="opt-loop">Loop</label>
+            <select id="opt-loop">
+              <option value="true" selected>Loop forever</option>
+              <option value="false">Play once</option>
+            </select>
+          </div>
         </div>
       </details>
 
@@ -493,6 +500,7 @@
           speed: parseFloat(document.getElementById("opt-speed").value),
           max_turns: parseInt(document.getElementById("opt-turns").value, 10),
           color_scheme: document.getElementById("opt-scheme").value.trim(),
+          loop: document.getElementById("opt-loop").value === "true",
         };
       }
 

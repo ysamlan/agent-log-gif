@@ -116,6 +116,7 @@ def render_gif(jsonl_content, options):
     color_scheme = options.get("color_scheme", "")
     show = options.get("show", "")
     shimmer = options.get("shimmer", True)
+    loop = options.get("loop", True)
 
     session_path = Path("/tmp/session.jsonl")
     session_path.write_text(jsonl_content)
@@ -194,6 +195,7 @@ def render_gif(jsonl_content, options):
         output_path,
         palette_seeds=_palette_seed_colors(theme, transcript_source, shimmer),
         gifsicle=False,
+        loop=loop,
     )
 
     result = {"gif": to_js(output_path.read_bytes()), "frames": len(frames)}

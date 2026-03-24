@@ -91,6 +91,7 @@ _MEDIA_KWARG_NAMES = (
     "parallel",
     "gifsicle",
     "lossy",
+    "loop",
 )
 
 
@@ -190,6 +191,7 @@ def _session_to_media(
     parallel=0,
     gifsicle=True,
     lossy=None,
+    loop=True,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -343,6 +345,7 @@ def _session_to_media(
             ),
             gifsicle=gifsicle,
             lossy=lossy,
+            loop=loop,
         )
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
@@ -760,6 +763,12 @@ def _media_options(fn):
                 "changed by less than this per-channel value as unchanged, "
                 "producing smaller files. Try 30 for a good size/quality balance.",
             ),
+            click.option(
+                "--loop/--no-loop",
+                default=True,
+                help="Loop the GIF infinitely (default: on). "
+                "--no-loop makes the GIF play once and stop.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -807,6 +816,7 @@ def local_cmd(
     parallel,
     gifsicle,
     lossy,
+    loop,
     open_browser,
     limit,
 ):
@@ -914,6 +924,14 @@ def local_cmd(
             return
         show = show or None
 
+    if loop and fmt == "gif":
+        loop = questionary.confirm(
+            "Loop GIF infinitely?",
+            default=True,
+        ).ask()
+        if loop is None:
+            return
+
     # Determine output path
     if output is None:
         output = Path(tempfile.gettempdir()) / f"{selected.stem}.{fmt}"
@@ -946,6 +964,7 @@ def local_cmd(
             parallel=parallel,
             gifsicle=gifsicle,
             lossy=lossy,
+            loop=loop,
         ),
     )
 
@@ -999,6 +1018,7 @@ def json_cmd(
     parallel,
     gifsicle,
     lossy,
+    loop,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -1048,6 +1068,7 @@ def json_cmd(
             parallel=parallel,
             gifsicle=gifsicle,
             lossy=lossy,
+            loop=loop,
         ),
     )
 

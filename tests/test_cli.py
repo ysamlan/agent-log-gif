@@ -253,6 +253,12 @@ class TestLocalCommand:
             "select",
             self._fake_select([fixture, "mac", ""]),
         )
+        # Loop prompt uses questionary.confirm → answer True
+        monkeypatch.setattr(
+            agent_log_gif.questionary,
+            "confirm",
+            self._fake_select([True]),
+        )
 
         runner = CliRunner()
         result = runner.invoke(cli, ["local", "-o", str(output)])
