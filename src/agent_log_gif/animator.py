@@ -435,8 +435,16 @@ def generate_frames(
     # Apply spinner_time multiplier
     spin_cycles = max(1, int(SPINNER_CYCLES * spinner_time))
 
-    # Custom or default verbs
-    verbs = thinking_verbs if thinking_verbs is not None else SPINNER_VERBS
+    # Custom or default verbs — Codex defaults to "Working" (matching its real TUI).
+    # Note: the real Codex TUI also dynamically extracts **bold** verbs from the
+    # reasoning stream (e.g. "Searching", "Reading"), but session logs only persist
+    # encrypted reasoning content, so those verbs aren't available to us here.
+    if thinking_verbs is not None:
+        verbs = thinking_verbs
+    elif transcript_source == "codex":
+        verbs = ["Working"]
+    else:
+        verbs = SPINNER_VERBS
 
     # Parallel rendering: capture specs during animation, render later.
     # 0 = auto (default), 1 = sequential, 2+ = explicit worker count.
