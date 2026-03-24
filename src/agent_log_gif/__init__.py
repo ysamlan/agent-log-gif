@@ -92,6 +92,7 @@ _MEDIA_KWARG_NAMES = (
     "gifsicle",
     "lossy",
     "loop",
+    "loop_offset",
 )
 
 
@@ -192,6 +193,7 @@ def _session_to_media(
     gifsicle=True,
     lossy=None,
     loop=True,
+    loop_offset=0,
 ):
     """Core pipeline: session file → animated media."""
     from agent_log_gif.animator import generate_frames
@@ -346,6 +348,7 @@ def _session_to_media(
             gifsicle=gifsicle,
             lossy=lossy,
             loop=loop,
+            loop_offset=loop_offset,
         )
     elif fmt == "mp4":
         from agent_log_gif.backends.video import save_mp4
@@ -369,6 +372,28 @@ def _session_to_media(
 
     size_kb = Path(output_path).stat().st_size / 1024
     click.echo(f"Done! {output_path} ({size_kb:.0f} KB, {len(frames)} frames)")
+
+    # Share URL
+    from agent_log_gif.share import encode_share_url
+
+    share_opts = {}
+    if chrome and chrome != "mac":
+        share_opts["chrome"] = chrome
+    if speed is not None and speed != 1.0:
+        share_opts["speed"] = speed
+    if color_scheme:
+        share_opts["color_scheme"] = color_scheme
+    if not loop:
+        share_opts["loop"] = loop
+    share_url = encode_share_url(
+        selected_events,
+        transcript_source=transcript_source,
+        **share_opts,
+    )
+    if share_url:
+        click.echo(f"Share: {share_url}")
+    else:
+        click.echo("Share: session too large for URL sharing")
 
 
 def _parse_turns(turns_str):
@@ -769,6 +794,14 @@ def _media_options(fn):
                 help="Loop the GIF infinitely (default: on). "
                 "--no-loop makes the GIF play once and stop.",
             ),
+            click.option(
+                "--loop-offset",
+                type=int,
+                default=0,
+                help="Start the GIF at this percentage (0-100) into the animation. "
+                "Changes the poster/thumbnail frame and the loop restart point. "
+                "For example, --loop-offset 50 starts at the midpoint.",
+            ),
         ]
     ):
         fn = decorator(fn)
@@ -817,6 +850,7 @@ def local_cmd(
     gifsicle,
     lossy,
     loop,
+    loop_offset,
     open_browser,
     limit,
 ):
@@ -965,6 +999,7 @@ def local_cmd(
             gifsicle=gifsicle,
             lossy=lossy,
             loop=loop,
+            loop_offset=loop_offset,
         ),
     )
 
@@ -1019,6 +1054,7 @@ def json_cmd(
     gifsicle,
     lossy,
     loop,
+    loop_offset,
     open_browser,
 ):
     """Convert a Claude Code or Codex session JSON/JSONL file to a GIF."""
@@ -1069,6 +1105,7 @@ def json_cmd(
             gifsicle=gifsicle,
             lossy=lossy,
             loop=loop,
+            loop_offset=loop_offset,
         ),
     )
 

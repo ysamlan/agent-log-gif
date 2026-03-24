@@ -5,7 +5,12 @@ import subprocess
 import pytest
 from PIL import Image
 
-from agent_log_gif.backends.gif import _build_palette, _optimize_with_gifsicle, save_gif
+from agent_log_gif.backends.gif import (
+    _build_palette,
+    _optimize_with_gifsicle,
+    _rotate_frames,
+    save_gif,
+)
 
 # save_gif now uses frame diffing by default and takes a gifsicle= parameter.
 # Tests below disable gifsicle post-processing for speed/isolation.
@@ -371,3 +376,113 @@ class TestGifsicleIntegration:
         with Image.open(output) as gif:
             assert gif.is_animated
             assert gif.n_frames == 3
+
+
+class TestRotateFrames:
+    """Tests for _rotate_frames helper."""
+
+    def test_zero_offset_is_identity(self):
+        """loop_offset=0 returns frames unchanged."""
+        frames = [make_frame("red", 100), make_frame("blue", 200)]
+        result = _rotate_frames(frames, 0)
+        assert len(result) == 2
+        assert result[0][1] == 100
+        assert result[1][1] == 200
+
+    def test_100_offset_wraps_to_identity(self):
+        """loop_offset=100 is equivalent to 0 (full wrap)."""
+        frames = [make_frame("red", 100), make_frame("blue", 200)]
+        result = _rotate_frames(frames, 100)
+        assert len(result) == 2
+        assert result[0][1] == 100
+        assert result[1][1] == 200
+
+    def test_50_offset_rotates_to_midpoint(self):
+        """loop_offset=50 on 4 frames puts frame[2] first."""
+        frames = [
+            make_frame("red", 100),
+            make_frame("green", 200),
+            make_frame("blue", 300),
+            make_frame("yellow", 400),
+        ]
+        result = _rotate_frames(frames, 50)
+        assert len(result) == 4
+        assert [d for _, d in result] == [300, 400, 100, 200]
+
+    def test_preserves_frame_count(self):
+        """Rotation never adds or drops frames."""
+        frames = [make_frame("red"), make_frame("green"), make_frame("blue")]
+        for offset in [0, 25, 33, 50, 75, 100]:
+            result = _rotate_frames(frames, offset)
+            assert len(result) == 3
+
+    def test_single_frame(self):
+        """Single frame is unchanged regardless of offset."""
+        frames = [make_frame("red", 500)]
+        result = _rotate_frames(frames, 50)
+        assert len(result) == 1
+        assert result[0][1] == 500
+
+
+class TestLoopOffset:
+    """Integration tests for loop_offset in save_gif."""
+
+    def test_loop_offset_changes_first_frame(self, tmp_path):
+        """loop_offset=50 on [red, blue] makes blue the first frame."""
+        # Striped first frame so palette includes both colors
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255)),
+            make_frame("blue"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False, loop_offset=50)
+
+        with Image.open(output) as gif:
+            # Frame 0 should now be blue (was frame 1)
+            rgb = gif.convert("RGB")
+            colors = rgb.getcolors()
+            assert len(colors) == 1
+            assert colors[0][1] == (0, 0, 255)
+
+    def test_loop_offset_preserves_frame_count(self, tmp_path):
+        """loop_offset doesn't change number of frames."""
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255), (0, 128, 0)),
+            make_frame("blue"),
+            make_frame("green"),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False, loop_offset=33)
+
+        with Image.open(output) as gif:
+            assert gif.n_frames == 3
+
+    def test_loop_offset_rotates_durations(self, tmp_path):
+        """Frame durations rotate with the frames."""
+        frames = [
+            (make_striped_frame((255, 0, 0), (0, 0, 255))[0], 100),
+            make_frame("blue", 300),
+        ]
+        output = tmp_path / "test.gif"
+        save_gif(frames, output, gifsicle=False, loop_offset=50)
+
+        with Image.open(output) as gif:
+            durations = []
+            for i in range(gif.n_frames):
+                gif.seek(i)
+                durations.append(gif.info.get("duration", 0))
+            # Was [100, 300], rotated to [300, 100]
+            assert durations == [300, 100]
+
+    def test_loop_offset_zero_is_default(self, tmp_path):
+        """loop_offset=0 produces identical output to no offset."""
+        frames = [
+            make_striped_frame((255, 0, 0), (0, 0, 255)),
+            make_frame("blue"),
+        ]
+        out_default = tmp_path / "default.gif"
+        out_zero = tmp_path / "zero.gif"
+        save_gif(frames, out_default, gifsicle=False)
+        save_gif(frames, out_zero, gifsicle=False, loop_offset=0)
+
+        assert out_default.read_bytes() == out_zero.read_bytes()

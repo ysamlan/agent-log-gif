@@ -46,6 +46,30 @@ def _build_palette(
     return combined.quantize(colors=colors, method=2, dither=Image.Dither.NONE)
 
 
+def _rotate_frames(
+    frame_list: list[tuple[Image.Image, int]],
+    loop_offset: int,
+) -> list[tuple[Image.Image, int]]:
+    """Rotate frame list so the GIF starts at *loop_offset* percent.
+
+    Args:
+        frame_list: List of (PIL.Image, duration_ms) tuples.
+        loop_offset: Percentage (0-100) into the animation where the GIF
+            should begin.  0 and 100 both mean "no rotation".
+
+    Returns:
+        Rotated copy of *frame_list*.
+    """
+    n = len(frame_list)
+    if n <= 1 or loop_offset <= 0:
+        return frame_list
+    offset = loop_offset % 100
+    if offset == 0:
+        return frame_list
+    idx = int(n * offset / 100)
+    return frame_list[idx:] + frame_list[:idx]
+
+
 def save_gif(
     frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
@@ -55,6 +79,7 @@ def save_gif(
     gifsicle: bool = True,
     lossy: int | None = None,
     loop: bool = True,
+    loop_offset: float = 0,
 ) -> Path:
     """Save frames as an animated GIF with frame differencing.
 
@@ -79,6 +104,9 @@ def save_gif(
                Default None means let gifsicle handle lossy (--lossy=80).
         loop: Whether the GIF loops infinitely (default True). When False,
               the GIF plays once and stops.
+        loop_offset: Percentage (0-100) into the animation where the GIF
+              should start. Changes the poster/thumbnail frame and the
+              loop restart point. Default 0 (no rotation).
 
     Returns:
         Path to the written GIF file.
@@ -92,18 +120,22 @@ def save_gif(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Materialize durations and frame iterator
+    # Materialize frames as a list for possible rotation
     if isinstance(frames, FrameStore):
         if len(frames) == 0:
             raise ValueError("Cannot create GIF from empty frame list")
-        durations = [max(d, 20) for d in frames.durations()]
-        frame_iter = iter(frames)
+        frame_list = list(frames)
     else:
         frame_list = list(frames)
         if not frame_list:
             raise ValueError("Cannot create GIF from empty frame list")
-        durations = [max(d, 20) for _, d in frame_list]
-        frame_iter = iter(frame_list)
+
+    # Rotate frames when loop_offset is set
+    if loop_offset:
+        frame_list = _rotate_frames(frame_list, loop_offset)
+
+    durations = [max(d, 20) for _, d in frame_list]
+    frame_iter = iter(frame_list)
 
     # Build global palette from first frame + seed colors
     first_img, _ = next(frame_iter)

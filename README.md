@@ -196,6 +196,10 @@ agent-log-gif json [OPTIONS] [FILE]
   --shimmer / --no-shimmer     Loading line shimmer effect (default: on)
   --colors INT                 GIF palette size, 2-256 (default: 256)
   --parallel INT               Rendering workers (0=auto, 1=off, 2+=explicit)
+  --gifsicle / --no-gifsicle   gifsicle post-processing (default: on)
+  --lossy INT                  Lossy tolerance 0-200 (default: off). Try 30.
+  --loop / --no-loop           Loop GIF infinitely (default: on)
+  --loop-offset INT             Start GIF at this % (0-100) into the animation
   --open / --no-open           Open result in default viewer
 
 agent-log-gif search KEYWORD [--source claude|codex]
