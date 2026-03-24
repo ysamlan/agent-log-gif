@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "dependencies": {
+    "gifsicle-wasm": "^1.96.4"
+  }
+}

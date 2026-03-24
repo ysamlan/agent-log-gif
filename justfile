@@ -64,9 +64,11 @@ test-web-full:
 
 # === Web ===
 
-# Update gifsicle WASM from gifsicle-bin GitHub release (version from pyproject.toml)
-update-gifsicle-wasm *args:
-    bash scripts/fetch_gifsicle_wasm.sh "$@"
+# Install JS dependencies and copy WASM artifacts into place
+install-js:
+    bun install
+    cp node_modules/gifsicle-wasm/dist/gifsicle.js web/lib/gifsicle/gifsicle.js
+    cp node_modules/gifsicle-wasm/dist/gifsicle.wasm web/lib/gifsicle/gifsicle.wasm
 
 # Build the web bundle (agent_log_gif.zip for Pyodide)
 build-web:

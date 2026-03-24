@@ -15,6 +15,7 @@ skills/agent-log-gif-workspace
 .claude/settings.local.json
 target/
 gifsicle-bin/
+node_modules/
 web/agent_log_gif.zip
 .devcontainer/Dockerfile
 

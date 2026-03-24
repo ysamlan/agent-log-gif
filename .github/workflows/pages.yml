@@ -24,10 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Fetch gifsicle WASM
-        run: bash scripts/fetch_gifsicle_wasm.sh
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Install JS dependencies
+        run: |
+          bun install
+          cp node_modules/gifsicle-wasm/dist/gifsicle.js web/lib/gifsicle/gifsicle.js
+          cp node_modules/gifsicle-wasm/dist/gifsicle.wasm web/lib/gifsicle/gifsicle.wasm
 
       - name: Build web bundle
         run: bash scripts/build_web.sh

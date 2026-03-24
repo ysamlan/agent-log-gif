@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "gifsicle-wasm": "^1.96.4",
+      },
+    },
+  },
+  "packages": {
+    "gifsicle-wasm": ["gifsicle-wasm@1.96.4", "", {}, "sha512-wbuyL1JPFjGZfnFX833us8T4TCPONWi/38Mates0C5QvCu4bRVm0o/WCDq4K5UY8EVNcdztNYYd1sySYUpI4Wg=="],
+  }
+}
