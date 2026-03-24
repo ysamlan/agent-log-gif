@@ -60,14 +60,17 @@ def page(browser, web_server):
 
 
 class TestPageLoad:
-    def test_title_and_dropzone_visible(self, page: Page):
+    def test_title_visible(self, page: Page):
         expect(page.locator("h1")).to_contain_text("agent-log-gif")
-        expect(page.locator(".dropzone")).to_be_visible()
 
-    def test_upload_tab_active_by_default(self, page: Page):
-        expect(page.locator(".tab-btn.active")).to_contain_text("Upload file")
-        expect(page.locator("#panel-upload")).to_be_visible()
-        expect(page.locator("#panel-compose")).not_to_be_visible()
+    def test_compose_tab_active_by_default(self, page: Page):
+        expect(page.locator(".tab-btn.active")).to_contain_text("Compose")
+        expect(page.locator("#panel-compose")).to_be_visible()
+        expect(page.locator("#panel-upload")).not_to_be_visible()
+
+    def test_dropzone_visible_on_upload_tab(self, page: Page):
+        page.locator(".tab-btn", has_text="Upload file").click()
+        expect(page.locator(".dropzone")).to_be_visible()
 
     def test_options_panel_collapsed_by_default(self, page: Page):
         details = page.locator("details.options")
@@ -153,9 +156,16 @@ class TestCompose:
         expect(page.locator(".compose-row-delete").nth(0)).to_be_disabled()
 
     def test_generate_empty_shows_error(self, page: Page):
+        for ta in page.locator(".compose-row textarea").all():
+            ta.fill("")
         page.locator("#compose-generate").click()
         expect(page.locator("#error")).to_be_visible()
         expect(page.locator("#error-text")).to_contain_text("at least one message")
+
+    def test_compose_autofilled_with_quote(self, page: Page):
+        textareas = page.locator(".compose-row textarea")
+        expect(textareas.nth(0)).not_to_have_value("")
+        expect(textareas.nth(1)).not_to_have_value("")
 
     def test_format_dropdown_options(self, page: Page):
         select = page.locator("#compose-format")

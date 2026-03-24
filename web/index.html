@@ -333,17 +333,17 @@
 
     <!-- Tabbed input -->
       <div class="tabs">
-        <button class="tab-btn active" data-tab="upload">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></svg>
-          Upload file
-        </button>
-        <button class="tab-btn" data-tab="compose">
+        <button class="tab-btn active" data-tab="compose">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M7 11h10"/><path d="M7 15h6"/><path d="M7 7h8"/></svg>
           Compose
         </button>
+        <button class="tab-btn" data-tab="upload">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></svg>
+          Upload file
+        </button>
       </div>
 
-      <div class="tab-panel active" id="panel-upload">
+      <div class="tab-panel" id="panel-upload">
         <div class="dropzone" id="dropzone">
           <div class="dropzone-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></svg>
@@ -354,7 +354,7 @@
         </div>
       </div>
 
-      <div class="tab-panel" id="panel-compose">
+      <div class="tab-panel active" id="panel-compose">
         <div class="compose">
           <div class="compose-header">
             <div class="field">
@@ -872,6 +872,29 @@
         dropzone.classList.remove("dragover");
         handleFile(e.dataTransfer.files[0]);
       });
+
+      (function autofillCompose() {
+        const quotes = [
+          ["Why are you wearing that stupid bunny suit?", "Why are you wearing that stupid man suit?"],
+          ["Surely you can't be serious.", "I am serious... and don't call me Shirley."],
+          ["Where shall I go?", "Frankly, my dear, I don't give a damn."],
+          ["I want the truth!", "You can't handle the truth!"],
+          ["Why don't you just make ten louder and make ten be the top number and make that a little louder?", "...These go to eleven."],
+          ["Where's the money, Lebowski?!", "It's down there somewhere, let me take another look."],
+          ["I'm gonna be honest with you, that smells like pure gasoline.", "They've done studies, you know. 60% of the time, it works every time."],
+          ["Are you just looking at things in the office and saying that you love them?", "I love lamp."],
+          ["He didn't fall? Inconceivable!", "You keep using that word. I do not think it means what you think it means."],
+          ["Why do you wear a mask? Were you burned by acid, or something like that?", "Oh no, it's just that they're terribly comfortable. I think everyone will be wearing them in the future."],
+          ["You guessed wrong.", "You only think I guessed wrong! That's what's so funny! I switched glasses when your back was turned! Ha-ha! You fool! You fell victim to one of the classic blunders - the most famous of which is \"never get involved in a land war in Asia\" - but only slightly less well-known is this: \"Never go in against a Sicilian when death is on the line\"!"],
+          ["Farm boy, polish my horse's saddle. I want to see my face shining in it by morning.", "As you wish."],
+        ];
+        const pick = quotes[Math.floor(Math.random() * quotes.length)];
+        const rows = composeRows.querySelectorAll(".compose-row");
+        if (rows.length >= 2) {
+          rows[0].querySelector("textarea").value = pick[0];
+          rows[1].querySelector("textarea").value = pick[1];
+        }
+      })();
 
     // ---- Share URL auto-render ----
       (function checkShareUrl() {
