@@ -61,6 +61,7 @@ from agent_log_gif.spinner import (  # noqa: E402
 from agent_log_gif.theme import TerminalTheme  # noqa: E402
 from agent_log_gif.timeline import (  # noqa: E402
     EventType,
+    ReplayEvent,
     loglines_to_timeline,
     parse_show_flag,
     visible_events,
@@ -102,33 +103,17 @@ def _palette_seed_colors(theme, transcript_source, shimmer, canvas_bg=None):
     return list(seeds)
 
 
-def render_gif(jsonl_content, options):
-    """Main entry point: JSONL string + options dict -> JS {gif, frames}.
+def _render_events_to_gif(events, options, transcript_source="claude"):
+    """Shared rendering pipeline: events list + options -> JS {gif, frames}.
 
-    Mirrors _session_to_media() from __init__.py but adapted for Pyodide:
-    stubs click, uses parallel=1, smaller terminal defaults (72x16 vs 80x18),
-    and lower default max turns (10 vs CLI's 20) to keep wasm render times
-    manageable.
+    Handles turn grouping, theme setup, frame generation, and GIF encoding.
     """
     chrome = options.get("chrome", "mac")
     speed = options.get("speed", 1.0)
     max_turns = options.get("max_turns", DEFAULT_MAX_TURNS)
     color_scheme = options.get("color_scheme", "")
-    show = options.get("show", "")
     shimmer = options.get("shimmer", True)
     loop = options.get("loop", True)
-
-    session_path = Path("/tmp/session.jsonl")
-    session_path.write_text(jsonl_content)
-
-    show_extras = None
-    if show:
-        show_extras = parse_show_flag(show)
-
-    js.js_report_status("Parsing session...")
-    data = parse_session_file(session_path)
-    events = loglines_to_timeline(data.get("loglines", []))
-    events = visible_events(events, show=show_extras)
 
     if not events:
         raise ValueError("No visible messages found in session.")
@@ -164,7 +149,6 @@ def render_gif(jsonl_content, options):
     chrome_style = ChromeStyle(chrome.lower())
     renderer = TerminalRenderer(theme, chrome=chrome_style)
 
-    transcript_source = data.get("transcript_source", "claude")
     anim_kwargs = {}
     if speed != 1.0:
         anim_kwargs["speed"] = speed
@@ -198,5 +182,83 @@ def render_gif(jsonl_content, options):
         loop=loop,
     )
 
-    result = {"gif": to_js(output_path.read_bytes()), "frames": len(frames)}
+    # Build minimal events for share URL encoding
+    _EVENT_TYPE_TO_CODE = {
+        EventType.USER_MESSAGE: "u",
+        EventType.ASSISTANT_MESSAGE: "a",
+        EventType.THINKING: "k",
+        EventType.TOOL_CALL: "tc",
+        EventType.TOOL_RESULT: "tr",
+        EventType.INTERRUPTED: "i",
+    }
+    minimal_events = []
+    for e in selected_events:
+        code = _EVENT_TYPE_TO_CODE.get(e.type)
+        if code:
+            minimal_events.append([code, e.text])
+
+    result = {
+        "gif": to_js(output_path.read_bytes()),
+        "frames": len(frames),
+        "minimal_events": to_js(minimal_events),
+    }
     return to_js(result, dict_converter=js.Object.fromEntries)
+
+
+def render_gif(jsonl_content, options):
+    """Main entry point: JSONL string + options dict -> JS {gif, frames}.
+
+    Mirrors _session_to_media() from __init__.py but adapted for Pyodide:
+    stubs click, uses parallel=1, smaller terminal defaults (72x16 vs 80x18),
+    and lower default max turns (10 vs CLI's 20) to keep wasm render times
+    manageable.
+    """
+    show = options.get("show", "")
+
+    session_path = Path("/tmp/session.jsonl")
+    session_path.write_text(jsonl_content)
+
+    show_extras = None
+    if show:
+        show_extras = parse_show_flag(show)
+
+    js.js_report_status("Parsing session...")
+    data = parse_session_file(session_path)
+    events = loglines_to_timeline(data.get("loglines", []))
+    events = visible_events(events, show=show_extras)
+
+    transcript_source = data.get("transcript_source", "claude")
+    return _render_events_to_gif(events, options, transcript_source)
+
+
+# Map share URL type codes to EventType
+_CODE_TO_EVENT = {
+    "u": EventType.USER_MESSAGE,
+    "a": EventType.ASSISTANT_MESSAGE,
+    "k": EventType.THINKING,
+    "tc": EventType.TOOL_CALL,
+    "tr": EventType.TOOL_RESULT,
+    "i": EventType.INTERRUPTED,
+}
+
+
+def render_gif_from_share(events_data, options):
+    """Entry point for share URL rendering: event pairs + options -> JS {gif, frames}.
+
+    events_data is a list of [type_code, text] pairs from JavaScript.
+    """
+    transcript_source = options.get("transcript_source", "claude")
+
+    events = []
+    for pair in events_data:
+        code = pair[0]
+        text = pair[1]
+        event_type = _CODE_TO_EVENT.get(code)
+        if event_type is None:
+            continue
+        events.append(ReplayEvent(type=event_type, text=text))
+
+    # Share URL events are already selected — don't re-truncate turns
+    options["max_turns"] = 0
+
+    return _render_events_to_gif(events, options, transcript_source)

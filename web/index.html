@@ -281,6 +281,25 @@
       }
       .download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(195, 232, 141, 0.3); }
       .download-btn:active { transform: translateY(0); }
+      .result-actions { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+      .share-btn {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        padding: 0.6rem 1.5rem; background: var(--surface-raised); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono);
+        font-weight: 600; font-size: 0.8rem; letter-spacing: 0.01em;
+        cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, border-color 0.2s;
+        text-decoration: none;
+      }
+      .share-btn:hover { transform: translateY(-1px); border-color: var(--fg-dim); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+      .share-btn:active { transform: translateY(0); }
+      .toast {
+        position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+        background: var(--green); color: var(--bg); font-family: var(--mono);
+        font-size: 0.8rem; font-weight: 600; padding: 0.5rem 1.25rem;
+        border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100;
+      }
+      .toast.visible { opacity: 1; }
       .result-meta { color: var(--fg-dim); font-family: var(--mono); font-size: 0.7rem; margin-top: 0.625rem; letter-spacing: 0.02em; }
 
     /* ---- Footer ---- */
@@ -434,16 +453,23 @@
       <div class="result" id="result">
         <img id="result-img" alt="Generated GIF">
         <br>
-        <a class="download-btn" id="download-btn" download="session.gif">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-          Download GIF
-        </a>
+        <div class="result-actions">
+          <a class="download-btn" id="download-btn" download="session.gif">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+            Download GIF
+          </a>
+          <button class="share-btn" id="share-btn" title="Copy shareable URL to clipboard">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+            Share
+          </button>
+        </div>
         <div class="result-meta" id="result-meta"></div>
       </div>
-
+      <p class="subtitle">Want to use agent-log-gif locally?</p>
       <p class="subtitle">Run <code>uvx agent-log-gif</code> to run the CLI. </p>
       <p class="subtitle">Run <code>npx skills install ysamlan/agent-log-gif</code> to install as an agent skill.</p>
 
+      <div class="toast" id="toast"></div>
     </div>
 
     <footer>
@@ -455,11 +481,8 @@
         Icons by <a href="https://lucide.dev">Lucide</a>.
       </p>
       <p>
-        GIF optimization by <a href="https://github.com/kohler/gifsicle">gifsicle</a>
-        by Eddie Kohler, compiled to WebAssembly
-        (<a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">GPL v2</a>).
-        WASM build from <a href="https://github.com/simonw/tools/tree/main/lib/gifsicle">simonw/tools</a>
-        (<a href="https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/">blog post</a>).
+        GIF optimization by <a href="https://github.com/kohler/gifsicle">gifsicle</a>;
+        WASM via <a href="https://github.com/ysamlan/gifsicle-bin/tree/main">gifsicle-bin</a>.
       </p>
     </footer>
 
@@ -476,8 +499,12 @@
       const errorEl = document.getElementById("error");
       const errorText = document.getElementById("error-text");
 
+      const shareBtn = document.getElementById("share-btn");
+      const toastEl = document.getElementById("toast");
+
       let worker = null;
       let currentBlobUrl = null;
+      let lastMinimalEvents = null; // set by worker done message (from Python pipeline)
 
       function show(el) { el.classList.add("visible"); }
       function hide(el) { el.classList.remove("visible"); }
@@ -486,6 +513,116 @@
         errorText.textContent = msg;
         show(errorEl);
         hide(statusEl);
+      }
+
+      function showToast(msg, duration) {
+        duration = duration || 2000;
+        toastEl.textContent = msg;
+        toastEl.classList.add("visible");
+        setTimeout(() => toastEl.classList.remove("visible"), duration);
+      }
+
+    // ---- Share URL encode/decode ----
+      const OPTION_DEFAULTS = {
+        c: "mac", s: 1, cs: "", l: true, src: "claude"
+      };
+
+      const SHORT_TO_LONG = {
+        c: "chrome", s: "speed", cs: "color_scheme",
+        l: "loop", src: "transcript_source"
+      };
+
+      const LONG_TO_SHORT = {};
+      for (const [k, v] of Object.entries(SHORT_TO_LONG)) LONG_TO_SHORT[v] = k;
+
+      async function streamToBytes(readable) {
+        const reader = readable.getReader();
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+        const result = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const chunk of chunks) {
+          result.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return result;
+      }
+
+      async function decodeShareFragment(fragment) {
+        const parts = fragment.split(",");
+        if (parts.length < 3) throw new Error("Invalid share URL format");
+        const version = parts[0];
+        const optionsStr = parts[1];
+        const dataStr = parts.slice(2).join(",");
+        if (version !== "v1") throw new Error("Unsupported share URL version: " + version);
+
+        // Parse options
+        const options = {};
+        if (optionsStr) {
+          for (const pair of optionsStr.split(";")) {
+            const eq = pair.indexOf("=");
+            if (eq === -1) continue;
+            const shortKey = pair.slice(0, eq);
+            const val = pair.slice(eq + 1);
+            const longKey = SHORT_TO_LONG[shortKey] || shortKey;
+            // Python encodes booleans as 1/0; coerce for known boolean keys
+            if (longKey === "loop") options[longKey] = val !== "0" && val !== "false";
+            else if (val === "true") options[longKey] = true;
+            else if (val === "false") options[longKey] = false;
+            else if (!isNaN(Number(val)) && val !== "") options[longKey] = Number(val);
+            else options[longKey] = val;
+          }
+        }
+
+        // Base64url decode
+        let b64 = dataStr.replace(/-/g, "+").replace(/_/g, "/");
+        while (b64.length % 4 !== 0) b64 += "=";
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        // Decompress (zlib/deflate)
+        const ds = new DecompressionStream("deflate");
+        const writer = ds.writable.getWriter();
+        writer.write(bytes);
+        writer.close();
+        const decompressed = await streamToBytes(ds.readable);
+        const jsonStr = new TextDecoder().decode(decompressed);
+        const events = JSON.parse(jsonStr);
+        return { events, options };
+      }
+
+      async function encodeShareFragment(events, options) {
+        const jsonStr = JSON.stringify(events);
+        const cs = new CompressionStream("deflate");
+        const writer = cs.writable.getWriter();
+        writer.write(new TextEncoder().encode(jsonStr));
+        writer.close();
+        const compressed = await streamToBytes(cs.readable);
+
+        // Base64url encode
+        let b64 = btoa(String.fromCharCode.apply(null, compressed));
+        b64 = b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+        // Build options string (only non-defaults, skip redundant keys)
+        const skipKeys = new Set(["max_turns", "show"]);
+        const optParts = [];
+        for (const [longKey, val] of Object.entries(options)) {
+          if (skipKeys.has(longKey)) continue;
+          const shortKey = LONG_TO_SHORT[longKey] || longKey;
+          if (shortKey in OPTION_DEFAULTS && String(OPTION_DEFAULTS[shortKey]) === String(val)) continue;
+          optParts.push(shortKey + "=" + val);
+        }
+        const optionsStr = optParts.join(";");
+
+        const url = "https://ysamlan.github.io/agent-log-gif/#v1," + optionsStr + "," + b64;
+        if (url.length > 8000) return null;
+        return url;
       }
 
       function formatSize(bytes) {
@@ -516,6 +653,7 @@
 
     // ---- Submit JSONL (shared by upload and compose) ----
       function submitJsonl(jsonl, filename) {
+        lastMinimalEvents = null;
         hide(errorEl);
         hide(resultEl);
         show(statusEl);
@@ -633,9 +771,54 @@
         submitJsonl(lines.join("\n"), "composed.gif");
       });
 
+    // ---- Submit share events (from share URL) ----
+      function submitShareEvents(events, options) {
+        lastMinimalEvents = null;
+        hide(errorEl);
+        hide(resultEl);
+        show(statusEl);
+        statusMsg.textContent = "Loading shared session...";
+        progressFill.style.width = "0%";
+
+        if (currentBlobUrl) {
+          URL.revokeObjectURL(currentBlobUrl);
+          currentBlobUrl = null;
+        }
+
+        if (!worker) {
+          worker = new Worker("worker.js");
+          worker.onmessage = handleWorkerMessage;
+          worker.onerror = (e) => showError("Worker error: " + e.message);
+        }
+        worker.postMessage({
+          type: "render_share",
+          events: events,
+          options: options,
+        });
+
+        downloadBtn.download = "shared-session.gif";
+      }
+
+    // ---- Share button ----
+      shareBtn.addEventListener("click", async () => {
+        try {
+          if (!lastMinimalEvents) return;
+          const url = await encodeShareFragment(lastMinimalEvents, getOptions());
+          if (url) {
+            await navigator.clipboard.writeText(url);
+            window.location.hash = url.split("#")[1];
+            showToast("Copied share URL to clipboard!");
+          } else {
+            showToast("Session too large for URL sharing", 3000);
+          }
+        } catch (err) {
+          showToast("Failed to create share URL: " + err.message, 3000);
+        }
+      });
+
     // ---- Worker messages ----
       function handleWorkerMessage(e) {
-        const { type, message, current, total, gif, frames, rawSize, optimizedSize } = e.data;
+        const { type, message, current, total, gif, frames, rawSize, optimizedSize, minimalEvents } = e.data;
 
         switch (type) {
           case "status":
@@ -652,6 +835,7 @@
           case "done": {
             hide(statusEl);
             show(resultEl);
+            if (minimalEvents) lastMinimalEvents = minimalEvents;
             const blob = new Blob([gif], { type: "image/gif" });
             currentBlobUrl = URL.createObjectURL(blob);
             resultImg.src = currentBlobUrl;
@@ -688,6 +872,23 @@
         dropzone.classList.remove("dragover");
         handleFile(e.dataTransfer.files[0]);
       });
+
+    // ---- Share URL auto-render ----
+      (function checkShareUrl() {
+        const hash = window.location.hash;
+        if (!hash || !hash.startsWith("#v1,")) return;
+
+        decodeShareFragment(hash.slice(1)).then(({ events, options }) => {
+          if (options.chrome) document.getElementById("opt-chrome").value = options.chrome;
+          if (options.speed) document.getElementById("opt-speed").value = options.speed;
+          if (options.color_scheme) document.getElementById("opt-scheme").value = options.color_scheme;
+          if (options.loop !== undefined) document.getElementById("opt-loop").value = String(options.loop);
+
+          submitShareEvents(events, options);
+        }).catch(err => {
+          showError("Failed to load shared session: " + err.message);
+        });
+      })();
     </script>
   </body>
 </html>

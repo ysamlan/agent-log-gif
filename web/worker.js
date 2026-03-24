@@ -97,15 +97,48 @@ function gifsicleArgs(rawSizeBytes) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared: optimize raw GIF and post result
+// ---------------------------------------------------------------------------
+async function optimizeAndPost(rawGif, frameCount, minimalEvents) {
+  const rawSize = rawGif.byteLength;
+
+  status("Optimizing with gifsicle...");
+  const args = gifsicleArgs(rawSize);
+  const rawBuf = rawGif.buffer.slice(
+    rawGif.byteOffset,
+    rawGif.byteOffset + rawGif.byteLength
+  );
+  const optimized = await optimizeWithGifsicle(rawBuf, args);
+
+  postMessage(
+    {
+      type: "done",
+      gif: optimized.gif,
+      rawSize,
+      optimizedSize: optimized.outputSize,
+      frames: frameCount,
+      minimalEvents: minimalEvents || null,
+    },
+    [optimized.gif]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ensure Pyodide + gifsicle are initialized
+// ---------------------------------------------------------------------------
+async function ensureInit() {
+  if (!pyodide) {
+    initGifsicleWorker();
+    await initPyodide();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main render handler
 // ---------------------------------------------------------------------------
 async function handleRender(jsonl, options) {
   try {
-    // Initialize Pyodide and gifsicle worker if needed (first run)
-    if (!pyodide) {
-      initGifsicleWorker();
-      await initPyodide();
-    }
+    await ensureInit();
 
     pyodide.globals.set("jsonl_content", jsonl);
     pyodide.globals.set("render_options", pyodide.toPy(options));
@@ -115,29 +148,32 @@ async function handleRender(jsonl, options) {
     );
 
     const rawGif = result.gif instanceof Uint8Array ? result.gif : result.gif.toJs();
-    const rawSize = rawGif.byteLength;
-    const frameCount = result.frames;
+    // minimal_events is already a native JS array (to_js called in Python)
+    const minimalEvents = result.minimal_events || null;
+    await optimizeAndPost(rawGif, result.frames, minimalEvents);
+  } catch (e) {
+    postMessage({ type: "error", message: e.message || String(e) });
+  }
+}
 
-    // Delegate optimization to the gifsicle sub-worker (separate
-    // execution context — GPL code never runs in this worker's memory)
-    status("Optimizing with gifsicle...");
-    const args = gifsicleArgs(rawSize);
-    const rawBuf = rawGif.buffer.slice(
-      rawGif.byteOffset,
-      rawGif.byteOffset + rawGif.byteLength
-    );
-    const optimized = await optimizeWithGifsicle(rawBuf, args);
+// ---------------------------------------------------------------------------
+// Share render handler — renders from pre-extracted events
+// ---------------------------------------------------------------------------
+async function handleRenderShare(events, options) {
+  try {
+    await ensureInit();
 
-    postMessage(
-      {
-        type: "done",
-        gif: optimized.gif,
-        rawSize,
-        optimizedSize: optimized.outputSize,
-        frames: frameCount,
-      },
-      [optimized.gif]
+    pyodide.globals.set("share_events", pyodide.toPy(events));
+    pyodide.globals.set("render_options", pyodide.toPy(options));
+
+    const result = await pyodide.runPythonAsync(
+      "render_gif_from_share(list(share_events), dict(render_options))"
     );
+
+    const rawGif = result.gif instanceof Uint8Array ? result.gif : result.gif.toJs();
+    // minimal_events is already a native JS array (to_js called in Python)
+    const minimalEvents = result.minimal_events || null;
+    await optimizeAndPost(rawGif, result.frames, minimalEvents);
   } catch (e) {
     postMessage({ type: "error", message: e.message || String(e) });
   }
@@ -147,8 +183,10 @@ async function handleRender(jsonl, options) {
 // Message handler
 // ---------------------------------------------------------------------------
 onmessage = async (e) => {
-  const { type, jsonl, options } = e.data;
+  const { type, jsonl, events, options } = e.data;
   if (type === "render") {
     await handleRender(jsonl, options || {});
+  } else if (type === "render_share") {
+    await handleRenderShare(events, options || {});
   }
 };

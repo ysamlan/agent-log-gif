@@ -25,6 +25,18 @@ class TestJsonCommand:
             assert img.format == "GIF"
             assert img.is_animated
 
+    def test_share_url_in_output(self, tmp_path):
+        """json command prints a share URL containing #v1,."""
+        fixture = Path(__file__).parent / "sample_session.jsonl"
+        output = tmp_path / "share.gif"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["json", str(fixture), "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert "Share:" in result.output
+        assert "#v1," in result.output
+
     def test_produces_gif_from_codex_jsonl(self, tmp_path):
         """json command works with Codex JSONL sessions."""
         fixture = Path(__file__).parent / "sample_codex_session.jsonl"

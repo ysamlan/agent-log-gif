@@ -25,6 +25,7 @@ EXCLUDE_FILES = {
     "session.py",
     "web.py",
     "analysis.py",
+    "share.py",
 }
 EXCLUDE_BACKEND_FILES = {
     "video.py",

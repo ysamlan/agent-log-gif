@@ -85,7 +85,7 @@ class TestPageLoad:
         expect(footer).to_contain_text("Pyodide")
         expect(footer).to_contain_text("gifsicle")
         expect(footer).to_contain_text("Lucide")
-        expect(footer).to_contain_text("GPL v2")
+        expect(footer).to_contain_text("gifsicle-bin")
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +185,23 @@ class TestErrors:
 # ---------------------------------------------------------------------------
 
 
+def _wait_for_render(page: Page):
+    """Wait for either #result (success) or #error (failure), fail fast on error."""
+    page.wait_for_function(
+        """() => {
+            const result = document.querySelector('#result');
+            const error = document.querySelector('#error');
+            return (result && result.offsetParent !== null)
+                || (error && error.offsetParent !== null);
+        }""",
+        timeout=60_000,
+    )
+    error_el = page.locator("#error")
+    if error_el.is_visible():
+        error_text = page.locator("#error-text").text_content()
+        pytest.fail(f"Render failed with JS error: {error_text}")
+
+
 @pytest.mark.slow
 class TestGifGeneration:
     """Full pipeline tests. These load Pyodide + Pillow (~10-15s), render
@@ -206,8 +223,8 @@ class TestGifGeneration:
         # Status should appear
         expect(page.locator("#status")).to_be_visible()
 
-        # Wait for result (Pyodide load + render + gifsicle)
-        expect(page.locator("#result")).to_be_visible(timeout=180_000)
+        # Wait for result or fail fast on error
+        _wait_for_render(page)
 
         # Should have a blob image
         img = page.locator("#result-img")
@@ -236,7 +253,39 @@ class TestGifGeneration:
         page.locator("#compose-generate").click()
 
         expect(page.locator("#status")).to_be_visible()
-        expect(page.locator("#result")).to_be_visible(timeout=180_000)
+        _wait_for_render(page)
 
         assert page.locator("#result-img").get_attribute("src").startswith("blob:")
         expect(page.locator("#result-meta")).to_contain_text("frames")
+
+    def test_share_url_renders_gif(self, browser, web_server):
+        """CLI share URL opens in web UI and renders a GIF end-to-end."""
+        from agent_log_gif.parsers import parse_session_file
+        from agent_log_gif.share import encode_share_url
+        from agent_log_gif.timeline import loglines_to_timeline, visible_events
+
+        # Generate a share URL from the test fixture (same as CLI would)
+        data = parse_session_file(SAMPLE_SESSION)
+        events = loglines_to_timeline(data.get("loglines", []))
+        events = visible_events(events)
+        transcript_source = data.get("transcript_source", "claude")
+        share_url = encode_share_url(events, transcript_source=transcript_source)
+        assert share_url is not None
+
+        # Extract fragment and navigate to it on the local server
+        fragment = share_url.split("#", 1)[1]
+        page = browser.new_page()
+        try:
+            page.goto(f"{web_server}/#{fragment}")
+            page.wait_for_load_state("networkidle")
+
+            # Should auto-render — wait for result or fail fast on error
+            _wait_for_render(page)
+
+            # Verify GIF rendered
+            img = page.locator("#result-img")
+            expect(img).to_be_visible()
+            assert img.get_attribute("src").startswith("blob:")
+            expect(page.locator("#result-meta")).to_contain_text("frames")
+        finally:
+            page.close()
