@@ -61,7 +61,7 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV DEVCONTAINER=true
 
 # Create workspace and config directories (needed for volume mounts)
-RUN mkdir -p /workspace /home/node/.claude /home/node/.codex /workspace/.venv_devcontainer /home/node/.cache/uv && \
+RUN mkdir -p /workspace /workspace/node_modules /home/node/.claude /home/node/.codex /workspace/.venv_devcontainer /home/node/.cache/uv && \
   chown -R node:node /workspace /home/node/.claude /home/node/.codex /home/node/.cache
 
 WORKDIR /workspace
@@ -82,11 +82,6 @@ COPY --from=oven/bun:latest /usr/local/bin/bunx /usr/local/bin/bunx
 # Set up non-root user
 USER node
 ENV ZSH_IN_DOCKER_VERSION=1.2.1
-
-# Install Emscripten SDK (for gifsicle-bin WASM builds)
-RUN git clone --depth 1 https://github.com/emscripten-core/emsdk.git /home/node/.emsdk && \
-  cd /home/node/.emsdk && ./emsdk install latest && ./emsdk activate latest
-ENV PATH="/home/node/.emsdk:/home/node/.emsdk/upstream/emscripten:$PATH"
 
 # Install mise (manages Python + Node.js versions)
 RUN curl https://mise.run | sh
@@ -118,6 +113,11 @@ ENV UV_PROJECT_ENVIRONMENT=/workspace/.venv_devcontainer
 # uv cache settings - use copy mode since cache is on a different volume
 ENV UV_CACHE_DIR=/home/node/.cache/uv
 ENV UV_LINK_MODE=copy
+
+# Install Emscripten SDK (for gifsicle-bin WASM builds)
+RUN git clone --depth 1 https://github.com/emscripten-core/emsdk.git /home/node/.emsdk && \
+  cd /home/node/.emsdk && ./emsdk install latest && ./emsdk activate latest
+ENV PATH="/home/node/.emsdk:/home/node/.emsdk/upstream/emscripten:$PATH"
 
 # Install zsh with powerlevel10k theme
 RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v${ZSH_IN_DOCKER_VERSION}/zsh-in-docker.sh)" -- \

@@ -62,6 +62,15 @@ test-web:
 test-web-full:
     pytest tests/test_web_ui.py "$@"
 
+# === Maintenance ===
+
+# Update GitHub Actions to latest pinned versions (7-day cooldown)
+[no-exit-message]
+update-actions:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    bunx actions-up@v1.12.0 --min-age 7
+
 # === Web ===
 
 # Install JS dependencies and copy WASM artifacts into place

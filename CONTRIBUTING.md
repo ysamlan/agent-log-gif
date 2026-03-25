@@ -111,6 +111,14 @@ To enable: go to repo **Settings → Pages → Source** and select **"GitHub Act
 
 PyPI publishing runs from `.github/workflows/publish.yml` when a GitHub release is published. That workflow mirrors CI: non-browser tests run across the Python matrix, while Playwright browser tests run once on Ubuntu/Python 3.13 before publish.
 
+## Updating GitHub Actions
+
+GitHub Actions should be updated using [actions-up](https://github.com/jdx/actions-up) so we get deterministic pinned versions with a cooldown period. Dependabot handles security updates separately.
+
+```bash
+just update-actions
+```
+
 ## Updating gifsicle WASM
 
 The gifsicle WASM artifacts (`gifsicle.js` + `gifsicle.wasm`) are built by [gifsicle-bin](https://github.com/ysamlan/gifsicle-bin) CI and published to npm as [`gifsicle-wasm`](https://www.npmjs.com/package/gifsicle-wasm). The WASM build approach is based on [Simon Willison's gifsicle WASM work](https://github.com/simonw/tools) ([blog post](https://simonwillison.net/guides/agentic-engineering-patterns/gif-optimization/)).

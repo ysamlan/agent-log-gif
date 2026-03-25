@@ -1,0 +1,9 @@
+# Dependencies (arch-specific binaries, reinstalled in container)
+node_modules/
+
+# Python virtual environments
+.venv/
+.venv_devcontainer/
+
+# Temp/scratch directories
+tmp/
