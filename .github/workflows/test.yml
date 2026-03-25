@@ -71,3 +71,12 @@ jobs:
         run: uv run playwright install chromium
       - name: Run browser tests
         run: uv run pytest tests/test_web_ui.py
+
+  deploy-pages:
+    if: github.ref == 'refs/heads/main'
+    needs: [test, test-web]
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
