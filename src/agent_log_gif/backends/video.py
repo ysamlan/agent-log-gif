@@ -182,6 +182,31 @@ def _encode_video(
     return output_path
 
 
+def _mp4_codec_args() -> list[str]:
+    """Return MP4 codec args tuned for screen-content quality.
+
+    Uses ``-tune animation`` for sharp text edges and flat color regions
+    (increases B-frames, adjusts deblocking for detail preservation).
+    CRF 26 compensates for the slight size increase from animation tuning,
+    producing similar-or-smaller files vs vanilla CRF 23 with better
+    text quality.
+    """
+    return [
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "medium",
+        "-tune",
+        "animation",
+        "-crf",
+        "26",
+        "-movflags",
+        "+faststart",
+    ]
+
+
 def save_mp4(
     frames: FrameStore | Iterable[tuple[Image.Image, int]],
     output_path: str | Path,
@@ -197,19 +222,7 @@ def save_mp4(
     Returns:
         Path to the written MP4 file.
     """
-    codec_args = [
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-preset",
-        "medium",
-        "-crf",
-        "23",
-        "-movflags",
-        "+faststart",
-    ]
-    return _encode_video(frames, output_path, fps, codec_args)
+    return _encode_video(frames, output_path, fps, _mp4_codec_args())
 
 
 def save_avif(

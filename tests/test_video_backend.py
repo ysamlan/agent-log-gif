@@ -8,6 +8,7 @@ from PIL import Image
 
 from agent_log_gif.backends.video import (
     _avif_codec_args,
+    _mp4_codec_args,
     _preferred_av1_encoders,
     _select_av1_encoder,
     save_avif,
@@ -51,6 +52,33 @@ class TestEncodeVideoInvocation:
         save_mp4([make_frame("red")], output)
 
         assert recorded["stderr"] is None
+
+
+class TestMp4CodecArgs:
+    def test_uses_animation_tune(self):
+        args = _mp4_codec_args()
+        tune_idx = args.index("-tune")
+        assert args[tune_idx + 1] == "animation"
+
+    def test_uses_faststart(self):
+        args = _mp4_codec_args()
+        assert "+faststart" in args
+
+    def test_full_args(self):
+        assert _mp4_codec_args() == [
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "medium",
+            "-tune",
+            "animation",
+            "-crf",
+            "26",
+            "-movflags",
+            "+faststart",
+        ]
 
 
 class TestAvifCodecArgs:
