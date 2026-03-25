@@ -783,10 +783,10 @@ def _media_options(fn):
             click.option(
                 "--lossy",
                 type=int,
-                default=None,
-                help="Lossy tolerance (0-200, default: off). Treats pixels that "
-                "changed by less than this per-channel value as unchanged, "
-                "producing smaller files. Try 30 for a good size/quality balance.",
+                default=80,
+                help="Gifsicle lossy compression level (0-200, default: 80). "
+                "Higher values produce smaller files with more artifacts. "
+                "0 disables lossy compression.",
             ),
             click.option(
                 "--loop/--no-loop",

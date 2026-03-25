@@ -2,7 +2,8 @@
 
 Assembles animated GIF from a sequence of (Image, duration_ms) frames.
 Uses frame differencing (transparent unchanged pixels) to minimize LZW
-encoding work and GIF file size. Optionally post-processes with gifsicle.
+encoding work and GIF file size. Post-processes with gifsicle for
+lossy compression (``--lossy=80`` by default).
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ def save_gif(
     colors: int | None = None,
     palette_seeds: list[tuple[int, int, int]] | None = None,
     gifsicle: bool = True,
-    lossy: int | None = None,
+    lossy: int = 80,
     loop: bool = True,
     loop_offset: float = 0,
 ) -> Path:
@@ -88,7 +89,7 @@ def save_gif(
     producing much smaller files and faster LZW encoding.
 
     When gifsicle is available and enabled, post-processes with
-    ``gifsicle -O2 --lossy=80`` for further compression.
+    ``gifsicle -O2 --lossy=<N>`` for further compression.
 
     Args:
         frames: FrameStore or iterable of (PIL.Image, duration_ms) tuples.
@@ -98,10 +99,9 @@ def save_gif(
                 for transparency, so effective max is 255. None means 256.
         palette_seeds: RGB tuples to guarantee in the palette.
         gifsicle: Whether to post-process with gifsicle (default True).
-        lossy: Lossy threshold (0-200). Pixels that changed by less than
-               this per-channel value are treated as unchanged, producing
-               smaller files at the cost of visual fidelity. 0 = lossless.
-               Default None means let gifsicle handle lossy (--lossy=80).
+        lossy: Gifsicle lossy compression level (0-200, default 80).
+               Higher values produce smaller files with more artifacts.
+               0 disables lossy compression.
         loop: Whether the GIF loops infinitely (default True). When False,
               the GIF plays once and stops.
         loop_offset: Percentage (0-100) into the animation where the GIF
@@ -116,7 +116,6 @@ def save_gif(
     """
     # Reserve one palette slot for the transparent index
     colors = min((colors or 256), 255)
-    lossy = lossy or 0
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -151,49 +150,29 @@ def save_gif(
 
     # Previous frame data for diffing
     prev_data = first_q.tobytes()
-    prev_rgb = first_img
     width, height = first_q.size
 
     def _make_diff_frames():
         """Yield diff frames: only changed pixels, rest transparent.
 
-        Uses Pillow's C-level ImageChops to compute the diff mask.
-        When lossy > 0, compares in RGB space with a per-channel tolerance,
-        treating nearly-identical pixels as unchanged for smaller files.
+        Uses Pillow's C-level ImageChops to compute the diff mask,
+        comparing palette indices for an exact pixel-level diff.
         """
-        nonlocal prev_data, prev_rgb
+        nonlocal prev_data
 
         # Reusable transparent fill image
         trans_l = Image.new("L", (width, height), transparent_idx)
-
-        if lossy > 0:
-            # Tolerance LUT: differences <= lossy are treated as unchanged
-            tolerance_lut = [0] * min(lossy + 1, 256) + [255] * max(256 - lossy - 1, 0)
-            prev_channels = prev_rgb.split()
-        else:
-            # Precomputed LUT for exact diff: 0->0, nonzero->255
-            exact_lut = [0] + [255] * 255
+        # Precomputed LUT for exact diff: 0->0, nonzero->255
+        exact_lut = [0] + [255] * 255
 
         for img, _ in frame_iter:
             curr_q = img.quantize(palette=palette_ref, dither=Image.Dither.NONE)
             curr_data = curr_q.tobytes()
             curr_l = Image.frombytes("L", (width, height), curr_data)
 
-            if lossy > 0:
-                # Lossy: compare in RGB space with per-channel tolerance.
-                # A pixel is "changed" only if ANY channel differs by > lossy.
-                r1, g1, b1 = prev_channels
-                r2, g2, b2 = img.split()
-                dr = ImageChops.difference(r1, r2).point(tolerance_lut)
-                dg = ImageChops.difference(g1, g2).point(tolerance_lut)
-                db = ImageChops.difference(b1, b2).point(tolerance_lut)
-                mask = ImageChops.lighter(ImageChops.lighter(dr, dg), db)
-                prev_channels = r2, g2, b2
-            else:
-                # Exact: compare palette indices (faster, no RGB split needed)
-                prev_l = Image.frombytes("L", (width, height), prev_data)
-                diff_l = ImageChops.difference(prev_l, curr_l)
-                mask = diff_l.point(exact_lut)
+            prev_l = Image.frombytes("L", (width, height), prev_data)
+            diff_l = ImageChops.difference(prev_l, curr_l)
+            mask = diff_l.point(exact_lut)
 
             result_l = Image.composite(curr_l, trans_l, mask)
 
@@ -204,7 +183,6 @@ def save_gif(
             yield diff_img
 
             prev_data = curr_data
-            prev_rgb = img
 
     # Set transparency on first frame (fully opaque, but Pillow needs
     # the GCE block for consistency)
@@ -239,7 +217,7 @@ def _optimize_with_gifsicle(
     gif_path: Path,
     size_limit_mb: int = 200,
     colors: int = 256,
-    lossy: int = 0,
+    lossy: int = 80,
     loop: bool = True,
 ) -> None:
     """Optimize GIF with gifsicle if available. Modifies file in-place."""
@@ -265,14 +243,8 @@ def _optimize_with_gifsicle(
         # marginal gain, so fall back to O1.
         opt_level = "-O1" if original_mb > 50 else "-O2"
         cmd = ["gifsicle", opt_level]
-        # If the caller already did lossy diffing, use a gentler gifsicle
-        # lossy setting (or none). If no lossy was done, let gifsicle do it.
-        if lossy == 0:
-            cmd.append("--lossy=80")
-        elif lossy < 30:
-            # Small tolerance already applied — light gifsicle lossy on top
-            cmd.append("--lossy=40")
-        # else: lossy >= 30, skip gifsicle lossy (we did enough)
+        if lossy > 0:
+            cmd.append(f"--lossy={lossy}")
         if not loop:
             cmd.append("--no-loopcount")
         if colors < 256:
